@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>NetworkScanner</RootNamespace>
+    <AssemblyName>NetworkScanner</AssemblyName>
+    <Version>1.0.0</Version>
+    <Title>Network Scanner</Title>
+    <Description>Modern, open-source network scanner for Windows with IPv4/IPv6, port scanning, and vendor lookup</Description>
+    <Authors>Community</Authors>
+    <PackageProjectUrl>https://github.com/yourusername/network-scanner</PackageProjectUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Net.Ping" Version="4.3.0" />
+    <PackageReference Include="System.Net.NetworkInformation" Version="4.3.0" />
+  </ItemGroup>
+
+</Project>
