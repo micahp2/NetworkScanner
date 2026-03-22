@@ -1,6 +1,9 @@
 # Diagnostic / dev tooling — not part of the public release
 DiagnosticDump/
 
+# Release build output (publish.cmd writes here)
+publish/
+
 # Build results
 [Dd]ebug/
 [Dd]ebugPublic/
