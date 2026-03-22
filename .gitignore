@@ -3,6 +3,7 @@ DiagnosticDump/
 
 # Release build output (publish.cmd writes here)
 publish/
+*.zip
 
 # Build results
 [Dd]ebug/

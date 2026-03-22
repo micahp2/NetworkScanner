@@ -13,51 +13,53 @@ echo ============================================================
 echo.
 
 :: ── Commit and push source ──────────────────────────────────────────────────
-echo [1/5] Committing and pushing source...
+echo [1/4] Committing and pushing source...
 git add -A
 git commit -m "v%VERSION%"
 git push origin main
 echo.
 
-:: ── Framework-dependent build ────────────────────────────────────────────────
-echo [2/5] Building framework-dependent (requires .NET 8 runtime)...
-dotnet publish %CSPROJ% -c Release -r win-x64 --self-contained false ^
-  -p:PublishSingleFile=true ^
-  -p:DebugType=none ^
-  -o %OUTDIR%\framework-dependent
-echo.
-
 :: ── Self-contained build ─────────────────────────────────────────────────────
-echo [3/5] Building self-contained single file (no prerequisites)...
+:: WPF apps always require several native DLLs alongside the exe
+:: (wpfgfx_cor3.dll, PresentationNative_cor3.dll, D3DCompiler_47_cor3.dll,
+::  PenImc_cor3.dll, vcruntime140_cor3.dll) — PublishSingleFile cannot bundle
+:: unmanaged DLLs, so we zip the entire output folder instead of just the exe.
+:: Self-contained means no .NET runtime installation required on the target PC.
+echo [2/4] Building self-contained release...
 dotnet publish %CSPROJ% -c Release -r win-x64 --self-contained true ^
   -p:PublishSingleFile=true ^
   -p:EnableCompressionInSingleFile=true ^
   -p:DebugType=none ^
-  -o %OUTDIR%\self-contained
+  -o %OUTDIR%\NetworkScanner-v%VERSION%
 echo.
 
-:: ── Zip ──────────────────────────────────────────────────────────────────────
-echo [4/5] Zipping...
-powershell -NoProfile -Command ^
-  "Compress-Archive -Force -Path '%OUTDIR%\framework-dependent\NetworkScanner.exe' -DestinationPath '%OUTDIR%\NetworkScanner-v%VERSION%-win-x64-requires-dotnet8.zip'"
+:: ── Zip the whole folder ─────────────────────────────────────────────────────
+echo [3/4] Zipping output folder...
+set ZIPFILE=%OUTDIR%\NetworkScanner-v%VERSION%-win-x64.zip
+
+:: Remove previous zip if it exists
+if exist "%ZIPFILE%" del "%ZIPFILE%"
 
 powershell -NoProfile -Command ^
-  "Compress-Archive -Force -Path '%OUTDIR%\self-contained\NetworkScanner.exe' -DestinationPath '%OUTDIR%\NetworkScanner-v%VERSION%-win-x64-standalone.zip'"
+  "Compress-Archive -Path '%OUTDIR%\NetworkScanner-v%VERSION%\*' -DestinationPath '%ZIPFILE%'"
+
+echo.
+echo   Created: %CD%\%ZIPFILE%
 echo.
 
 :: ── Open GitHub new-release page ─────────────────────────────────────────────
-echo [5/5] Opening GitHub releases page...
+echo [4/4] Opening GitHub releases page...
 echo.
-echo   Upload these two files:
-echo     %CD%\%OUTDIR%\NetworkScanner-v%VERSION%-win-x64-standalone.zip
-echo     %CD%\%OUTDIR%\NetworkScanner-v%VERSION%-win-x64-requires-dotnet8.zip
+echo   Upload this file on the page that opens:
+echo     %CD%\%ZIPFILE%
 echo.
 echo   Tag:   v%VERSION%
 echo   Title: v%VERSION%
+echo   Note:  "Extract the zip and run NetworkScanner.exe. No installation required."
 echo.
 start https://github.com/%REPO%/releases/new?tag=v%VERSION%^&title=v%VERSION%
 
 echo ============================================================
-echo  Done. Attach the zip files on the GitHub page that just opened.
+echo  Done.
 echo ============================================================
 echo.
