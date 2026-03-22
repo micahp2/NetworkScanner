@@ -1,145 +1,190 @@
 # Network Scanner
 
-A fast, intelligent network discovery tool for Windows that finds devices on your local network without blind subnet scanning.
+A fast, open-source Windows network scanner built with WPF and .NET 8.
 
-## Why This Exists
+**[https://github.com/micahp2/NetworkScanner](https://github.com/micahp2/NetworkScanner)**
 
-Most network scanners work by probing every IP in a /24 range (254 IPs), which is **slow** and **misses devices** that don't respond to pings. Network Scanner is different: **it queries what Windows already knows** about your network.
-
-## How It Works
-
-Network Scanner uses Windows' IP Helper API to discover devices via three methods:
-
-1. **ARP Table** - Devices you've recently communicated with
-2. **TCP Connection Table** - Devices with active TCP connections
-3. **UDP Connection Table** - Devices listening on UDP ports
-4. **ARP Probing** - Sends targeted ARP requests to populate the cache
-
-This approach finds devices that would be missed by traditional ICMP ping-based scanners:
-- Devices that **block ICMP** (many IoT devices, printers, cameras)
-- Devices on **different VLANs** 
-- Devices accessed through **gateways/routers**
-- Devices with **firewall rules** blocking probes
+---
 
 ## Features
 
-- ✅ **Fast discovery** - Typically <5 seconds for a /24 network
-- ✅ **Dark mode support** - Respects Windows theme settings
-- ✅ **Hostname resolution** - DNS lookups for device names
-- ✅ **MAC address lookup** - Via ARP table querying
-- ✅ **OUI/Vendor identification** - Looks up NIC manufacturer from MAC address
-- ✅ **Port scanning** - Check common ports (HTTP, SSH, HTTPS, etc.)
-- ✅ **Port ranges** - Supports "80-443" syntax in addition to individual ports
-- ✅ **CSV export** - Save results for analysis
-- ✅ **Auto-detect network** - Prefills your subnet on startup
+| | |
+|---|---|
+| 🔍 **Full subnet scan** | Enumerates every host in a CIDR range (e.g. `192.168.1.0/24`) plus additional devices from the OS connection tables |
+| 🖥 **Hostname resolution** | Reverse DNS for every live host |
+| 🔌 **MAC address lookup** | Three-layer resolution: modern neighbor table (GetIpNetTable2) → legacy ARP cache → active SendARP probe |
+| 🌐 **IPv6 / NDP** | Reads the Windows IPv6 neighbor table to surface MACs for devices that silently drop IPv4 ARP (common on managed Wi-Fi networks) |
+| 🏭 **Vendor identification** | OUI lookup via macvendors.com with per-prefix caching and rate-limit handling |
+| 🔓 **Port scanning** | Configurable port list with comma and range syntax (`22,80,443,8080-8090`) |
+| 🌑 **Dark mode** | Follows the Windows system theme; dark title bar via DWM |
+| 📋 **Context menu** | Copy any field · Browse open ports in the browser · Open SSH/RDP/terminal from any row |
+| 🔎 **Find / search** | Popup search bar (Ctrl+F) with live highlighting and ↑/↓ navigation across all columns |
+| ↕ **Sortable columns** | All columns; IP Address sorts numerically |
+| 📁 **CSV export** | All fields including IPv6 |
+| 🔔 **Sound events** | Windows notification sound on scan complete; critical stop sound when cancelled |
+
+---
+
+## Screenshots
+
+> _Add screenshots here once you have them._
+
+---
 
 ## Usage
 
-1. **Launch the app** - It auto-detects your network (e.g., 192.168.2.0/24)
-2. **Optionally adjust**:
-   - IP Range (CIDR notation: 192.168.2.0/24)
-   - Ports to scan (comma-separated: 22,80,443,8080-8090)
-   - Checkboxes for DNS, MAC, Vendor, IPv4/IPv6
-3. **Click "Start Scan"** - Results populate as devices respond
-4. **Export to CSV** - Save the results
+1. **Launch** — the app auto-detects your subnet and pre-fills the IP range field
+2. **Set ports** — default is `80`; supports any combination:
+   - Single: `22`
+   - Multiple: `22,80,443`
+   - Range: `8080-8090`
+   - Mixed: `22,80,443,8080-8090`
+3. **Click Scan** — results stream in as hosts respond; click again to stop
+4. **Right-click any row** for the context menu:
+   - **Copy →** copies any single field to the clipboard
+   - **Browse →** opens `http(s)://ip:port` in your default browser for each open port
+   - **Shell →** SSH opens Windows Terminal/PowerShell with `ssh user@ip`; RDP opens `mstsc`
+5. **Find** (or Ctrl+F) — popup search bar; matched text is highlighted in amber in every cell
+6. **Export** — saves all results to CSV including IPv6 addresses
 
-## Known Limitations
+### IP Range formats
 
-### Missing MAC Addresses (~30% of devices)
+```
+192.168.1.0/24          CIDR (scans .1 through .254)
+192.168.1.1-254         last-octet range
+192.168.1.1-192.168.1.254   full range
+192.168.1.100           single host
+```
 
-Some devices won't respond to ARP requests even after probing:
-- **Why**: Devices may block unsolicited ARP for security reasons
-- **Devices affected**: Some enterprise IoT, firewalled servers, network appliances
-- **Workaround**: If the device has recently communicated with your PC, its MAC will appear after the first scan
+---
 
-**This is a Windows OS limitation, not a bug in the app.** If a device won't respond to ARP, there's no userland API to get its MAC address. (Kernel-mode packet capture could work, but requires admin elevation and driver installation.)
+## How MAC resolution works
 
-### IPv6 Support
+MAC addresses are resolved in three passes, from fastest to most aggressive:
 
-IPv6 scanning is simplified - only scans first 256 addresses of an IPv6 range. Full IPv6 CIDR support is a future enhancement.
+1. **OS neighbor table snapshot** — reads `GetIpNetTable2` (modern) and `GetIpNetTable` (legacy) plus `netsh interface ipv4/ipv6 show neighbors` before and after the ping sweep. This catches everything Windows already knows.
 
-### Network Detection
+2. **IPv6 NDP table** — `netsh interface ipv6 show neighbors` reveals MACs for devices that silently drop IPv4 ARP (common with managed UniFi APs, switches, and iOS/Android devices on Wi-Fi). EUI-64 IPv6 addresses mathematically encode the MAC, so MACs can be extracted even from `Unreachable` NDP entries.
 
-Only works on directly-connected networks. Devices across routers won't be discovered unless your PC has previously communicated with them.
+3. **Active SendARP probe** — for hosts still missing a MAC after the above, `SendARP()` issues a directed ARP request and reads the MAC directly from its output buffer (not from the OS table, which is unreliable for this purpose).
+
+### Why some devices still show no MAC
+
+If a device is on a **Wi-Fi network with client isolation enabled** (default on UniFi and many enterprise APs), the AP filters ARP between wireless clients. Your machine's ARP/NDP requests are dropped before reaching the device. The OS marks these as `00-00-00-00-00-00 Unreachable`. This is an intentional network policy — no userland Windows application can work around it without raw packet capture (which requires a kernel driver).
+
+Running the scanner from a **wired connection on the same switch** will resolve MACs for all devices.
+
+### Tailscale / VPN note
+
+When Tailscale (or similar VPN software) is running, it registers a virtual TAP adapter with a `169.254.x.x` (APIPA) address and an `Ethernet` interface type. This can cause Windows to report the wrong local subnet. The scanner filters out `169.254.x.x` addresses and prefers routable private-range addresses (`10.x`, `172.16-31.x`, `192.168.x`) when detecting the local subnet. Tailscale may also prevent some devices from being discovered due to its routing table modifications.
+
+---
 
 ## Building
 
-Requirements:
-- .NET 8.0 or later
-- Windows 10/11 (uses Windows IP Helper API)
+**Requirements:**
+- Windows 10 or 11
+- .NET 8.0 SDK or later
 
 ```bash
-cd networkscanner
+git clone https://github.com/micahp2/NetworkScanner
+cd NetworkScanner
 dotnet build
 dotnet run
 ```
 
-Or open `NetworkScanner.sln` in Visual Studio and build there.
+Or open `NetworkScanner.sln` in Visual Studio 2022+.
+
+**Release build:**
+```bash
+dotnet publish -c Release -r win-x64 --self-contained false
+```
+
+---
 
 ## Architecture
 
-### Core Components
+```
+NetworkScanner/
+├── models/
+│   ├── ScanResult.cs          # Result model with INotifyPropertyChanged
+│   └── ScanOptions.cs         # Scan configuration
+├── services/
+│   ├── IPHelperAPI.cs         # P/Invoke: GetIpNetTable2, GetIpNetTable,
+│   │                          #   SendARP, GetExtendedTcpTable/UdpTable,
+│   │                          #   DWM, winmm (sounds)
+│   └── NetworkScannerService.cs  # 6-phase scan engine
+├── App.xaml / App.xaml.cs    # Theme (dark/light), DWM title bar, sounds
+├── MainWindow.xaml            # UI layout, column definitions
+└── MainWindow.xaml.cs         # All UI logic: scan, search, sort,
+                               #   context menu, highlight text block
+```
 
-- **IPHelperAPI.cs** - P/Invoke wrappers for Windows IP Helper API
-  - `GetExtendedTcpTable()` - Query active TCP connections
-  - `GetExtendedUdpTable()` - Query active UDP connections
-  - `GetIpNetTable()` - Query ARP table
-  - `SendARP()` - Probe devices to populate ARP cache
+### Scan phases
 
-- **NetworkScannerService.cs** - Main scanning engine
-  - Device discovery via connection tables
-  - Parallel host probing (semaphore-limited to 10 concurrent)
-  - Hostname resolution
-  - MAC address lookup
-  - Port scanning with configurable timeouts
+| Phase | What happens |
+|---|---|
+| 1 | Build candidate IP list from user's range + OS connection tables |
+| 2 | Pre-scan MAC snapshot (ARP cache, NDP table, netsh) |
+| 3 | Ping all candidates at concurrency 50 — ICMP first, then 10 TCP ports in parallel |
+| 4 | 800ms settle delay for ARP/NDP cache to finish writing |
+| 5 | Post-ping MAC snapshot — merge with pre-scan, run NDP EUI-64 extraction |
+| 6 | Enrich each live host (DNS, MAC, vendor, ports) and stream results to UI |
 
-- **MainWindow.xaml/xaml.cs** - WPF UI
-  - Dark mode detection and theming
-  - DataGrid with sortable results
-  - Status tracking of actual devices found
-  - CSV export
+### Key APIs used
 
-## Performance
+| API | Purpose |
+|---|---|
+| `GetIpNetTable2` (iphlpapi) | Modern IPv4/IPv6 neighbor table |
+| `GetIpNetTable` (iphlpapi) | Legacy ARP cache |
+| `SendARP` (iphlpapi) | Active directed ARP probe |
+| `GetExtendedTcpTable` (iphlpapi) | Active TCP connections for device discovery |
+| `GetExtendedUdpTable` (iphlpapi) | Active UDP listeners for device discovery |
+| `DwmSetWindowAttribute` (dwmapi) | Dark title bar (attr 20 / 19) |
+| `PlaySound` (winmm) | Windows sound events |
+| `netsh interface ipv4/ipv6 show neighbors` | Stale ARP + NDP entries not visible via API |
+| macvendors.com API | OUI → vendor name lookup |
 
-Typical scan of a /24 network:
-- **Discovery phase**: 1-2 seconds (queries connection tables)
-- **Probing phase**: 3-5 seconds (parallel ICMP + TCP probes + ARP probes)
-- **Total**: ~5-7 seconds
-- **Devices found**: 50-100+ (depending on network size)
-
-Traditional ping-based scanner: 30-60 seconds to scan the same network (and finds fewer devices).
-
-## Future Enhancements
-
-- [ ] DHCP server query for device name resolution
-- [ ] Process name enrichment (show which local process is communicating with each device)
-- [ ] Full IPv6 CIDR support
-- [ ] Persistent device tracking across scans
-- [ ] Custom port profiles (HTTP, SSH, Database, etc.)
-- [ ] Network graph visualization
-- [ ] Automatic daily scans with change detection
+---
 
 ## Troubleshooting
 
-**No devices found?**
-- Ensure you're on the correct network
-- Check that your network isn't isolated/air-gapped
-- Try manually entering the correct IP range
+**No devices found**
+- Confirm the IP range matches your network (the auto-detected value should be correct)
+- Try running as Administrator — some ARP operations are more reliable with elevated privileges
+- If using a VPN, disconnect it and rescan
 
-**Missing MAC addresses?**
-- Device hasn't communicated with your PC yet (run another scan after pinging it)
-- Device blocks ARP requests
-- Device is on a different physical segment
+**Missing MAC addresses**
+- Wi-Fi with client isolation: connect via Ethernet for full MAC visibility
+- Run a second scan — the first ping sweep populates the ARP cache for subsequent lookups
+- Some devices (managed switches, IoT with hardened firmware) actively refuse ARP
 
-**Slow scanning?**
-- Large IP range (reduce to /25 or smaller)
-- Poor network connectivity
-- High latency to some devices (port timeout may need adjustment)
+**Scan is slow**
+- Reduce the port list — each port adds a TCP probe per host
+- Reduce the IP range to a smaller subnet
+
+**Wrong subnet auto-detected**
+- Disconnect VPN/Tailscale or manually enter the correct range
+
+---
+
+## Changelog
+
+### v1.0.0
+- Initial public release
+- Full /24 subnet scan (not just OS-table-known devices)
+- Three-layer MAC resolution with IPv6 NDP EUI-64 extraction
+- Tailscale/VPN interface detection fix (169.254.x.x filtering)
+- Dark mode with themed title bar, scrollbars, and input fields (DynamicResource)
+- Per-cell search highlighting (HighlightTextBlock)
+- Context menu: Copy / Browse / Shell
+- Sound events on scan complete and scan stop
+- Consistent all-manual sorting (no DataGrid ICollectionView conflict)
+- OUI vendor lookup with caching and rate-limit backoff
+- IPv6 address column
+
+---
 
 ## License
 
-MIT
-
-## Acknowledgments
-
-Built on learnings from Windows IP Helper API documentation and analysis of open-source network scanning tools.
+MIT — see [LICENSE](LICENSE)

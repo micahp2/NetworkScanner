@@ -3,40 +3,159 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              StartupUri="MainWindow.xaml">
     <Application.Resources>
-        <!-- Default light mode colors -->
-        <SolidColorBrush x:Key="BackgroundBrush" Color="#FFFFFF" />
-        <SolidColorBrush x:Key="PanelBrush" Color="#F5F5F5" />
-        <SolidColorBrush x:Key="BorderBrush" Color="#E0E0E0" />
-        <SolidColorBrush x:Key="TextBrush" Color="#000000" />
-        <SolidColorBrush x:Key="GridBackgroundBrush" Color="#FFFFFF" />
-        <SolidColorBrush x:Key="GridTextBrush" Color="#000000" />
-        <SolidColorBrush x:Key="GridAlternatingBrush" Color="#F5F5F5" />
-        <SolidColorBrush x:Key="GridHeaderBrush" Color="#E0E0E0" />
-        <SolidColorBrush x:Key="InputBackgroundBrush" Color="#FFFFFF" />
-        <SolidColorBrush x:Key="InputTextBrush" Color="#000000" />
-        <SolidColorBrush x:Key="HeaderTextBrush" Color="#000000" />
-        <SolidColorBrush x:Key="ButtonBackgroundBrush" Color="#E0E0E0" />
-        <SolidColorBrush x:Key="ButtonTextBrush" Color="#000000" />
-        
-        <!-- Button Style -->
+
+        <!-- ── Default (light) theme brushes ────────────────────────────────── -->
+        <!-- All styles below use DynamicResource so runtime brush swaps take    -->
+        <!-- effect immediately without restarting the app.                      -->
+        <SolidColorBrush x:Key="BackgroundBrush"       Color="#FFFFFF" />
+        <SolidColorBrush x:Key="PanelBrush"            Color="#F5F5F5" />
+        <SolidColorBrush x:Key="BorderBrush"           Color="#DDDDDD" />
+        <SolidColorBrush x:Key="TextBrush"             Color="#1A1A1A" />
+        <SolidColorBrush x:Key="GridBackgroundBrush"   Color="#FFFFFF" />
+        <SolidColorBrush x:Key="GridTextBrush"         Color="#1A1A1A" />
+        <SolidColorBrush x:Key="GridAlternatingBrush"  Color="#F7F7F7" />
+        <SolidColorBrush x:Key="GridHeaderBrush"       Color="#EBEBEB" />
+        <SolidColorBrush x:Key="InputBackgroundBrush"  Color="#FFFFFF" />
+        <SolidColorBrush x:Key="InputTextBrush"        Color="#1A1A1A" />
+        <SolidColorBrush x:Key="HeaderTextBrush"       Color="#666666" />
+        <SolidColorBrush x:Key="ButtonBackgroundBrush" Color="#E4E4E4" />
+        <SolidColorBrush x:Key="ButtonTextBrush"       Color="#1A1A1A" />
+        <SolidColorBrush x:Key="ScrollTrackBrush"      Color="#F0F0F0" />
+        <SolidColorBrush x:Key="ScrollThumbBrush"      Color="#BBBBBB" />
+        <SolidColorBrush x:Key="ScrollThumbHoverBrush" Color="#888888" />
+
+        <!-- ── Button ────────────────────────────────────────────────────────── -->
         <Style TargetType="Button">
-            <Setter Property="Background" Value="{StaticResource ButtonBackgroundBrush}" />
-            <Setter Property="Foreground" Value="{StaticResource ButtonTextBrush}" />
-            <Setter Property="Padding" Value="8,4" />
+            <Setter Property="Background"      Value="{DynamicResource ButtonBackgroundBrush}" />
+            <Setter Property="Foreground"      Value="{DynamicResource ButtonTextBrush}" />
+            <Setter Property="BorderBrush"     Value="{DynamicResource BorderBrush}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="Padding"         Value="8,4" />
+            <Setter Property="Cursor"          Value="Hand" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}" 
+                        <Border x:Name="Bd"
+                                Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
-                                Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                Padding="{TemplateBinding Padding}"
+                                CornerRadius="2">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
                         </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Opacity" Value="0.80" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Opacity" Value="0.60" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.38" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <!-- ── TextBox — DynamicResource so dark-mode swap works at runtime ─── -->
+        <Style TargetType="TextBox">
+            <Setter Property="Background"      Value="{DynamicResource InputBackgroundBrush}" />
+            <Setter Property="Foreground"      Value="{DynamicResource InputTextBrush}" />
+            <Setter Property="BorderBrush"     Value="{DynamicResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CaretBrush"      Value="{DynamicResource InputTextBrush}" />
+            <Setter Property="SelectionBrush"  Value="#0078D4" />
+        </Style>
+
+        <!-- ── ToolTip ──────────────────────────────────────────────────────── -->
+        <Style TargetType="ToolTip">
+            <Setter Property="Background"  Value="{DynamicResource PanelBrush}" />
+            <Setter Property="Foreground"  Value="{DynamicResource TextBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+            <Setter Property="Padding"     Value="8,6" />
+            <Setter Property="FontSize"    Value="11" />
+        </Style>
+
+        <!-- ── ScrollBar — thin overlay style, DynamicResource brushes ──────── -->
+        <!-- Thumb template — shared by both orientations -->
+        <ControlTemplate x:Key="ThemedThumb" TargetType="Thumb">
+            <Border x:Name="Bd" CornerRadius="3" Margin="2"
+                    Background="{DynamicResource ScrollThumbBrush}" />
+            <ControlTemplate.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter TargetName="Bd" Property="Background"
+                            Value="{DynamicResource ScrollThumbHoverBrush}" />
+                </Trigger>
+                <Trigger Property="IsDragging" Value="True">
+                    <Setter TargetName="Bd" Property="Background"
+                            Value="{DynamicResource ScrollThumbHoverBrush}" />
+                </Trigger>
+            </ControlTemplate.Triggers>
+        </ControlTemplate>
+
+        <!-- Transparent repeat-button fills track space -->
+        <ControlTemplate x:Key="TrackFill" TargetType="RepeatButton">
+            <Border Background="Transparent" />
+        </ControlTemplate>
+
+        <!-- Vertical scrollbar -->
+        <ControlTemplate x:Key="VScrollBar" TargetType="ScrollBar">
+            <Border Background="{DynamicResource ScrollTrackBrush}">
+                <Track x:Name="PART_Track" IsDirectionReversed="True">
+                    <Track.DecreaseRepeatButton>
+                        <RepeatButton Command="ScrollBar.PageUpCommand"
+                                      Template="{StaticResource TrackFill}"
+                                      Focusable="False" />
+                    </Track.DecreaseRepeatButton>
+                    <Track.Thumb>
+                        <Thumb Template="{StaticResource ThemedThumb}" />
+                    </Track.Thumb>
+                    <Track.IncreaseRepeatButton>
+                        <RepeatButton Command="ScrollBar.PageDownCommand"
+                                      Template="{StaticResource TrackFill}"
+                                      Focusable="False" />
+                    </Track.IncreaseRepeatButton>
+                </Track>
+            </Border>
+        </ControlTemplate>
+
+        <!-- Horizontal scrollbar -->
+        <ControlTemplate x:Key="HScrollBar" TargetType="ScrollBar">
+            <Border Background="{DynamicResource ScrollTrackBrush}">
+                <Track x:Name="PART_Track" IsDirectionReversed="False">
+                    <Track.DecreaseRepeatButton>
+                        <RepeatButton Command="ScrollBar.PageLeftCommand"
+                                      Template="{StaticResource TrackFill}"
+                                      Focusable="False" />
+                    </Track.DecreaseRepeatButton>
+                    <Track.Thumb>
+                        <Thumb Template="{StaticResource ThemedThumb}" />
+                    </Track.Thumb>
+                    <Track.IncreaseRepeatButton>
+                        <RepeatButton Command="ScrollBar.PageRightCommand"
+                                      Template="{StaticResource TrackFill}"
+                                      Focusable="False" />
+                    </Track.IncreaseRepeatButton>
+                </Track>
+            </Border>
+        </ControlTemplate>
+
+        <Style TargetType="ScrollBar">
+            <Setter Property="Width"     Value="10" />
+            <Setter Property="MinWidth"  Value="10" />
+            <Setter Property="Template"  Value="{StaticResource VScrollBar}" />
+            <Style.Triggers>
+                <Trigger Property="Orientation" Value="Horizontal">
+                    <Setter Property="Height"    Value="10" />
+                    <Setter Property="MinHeight" Value="10" />
+                    <Setter Property="Width"     Value="Auto" />
+                    <Setter Property="Template"  Value="{StaticResource HScrollBar}" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
     </Application.Resources>
 </Application>

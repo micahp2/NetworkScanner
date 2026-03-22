@@ -1,3 +1,6 @@
+# Diagnostic / dev tooling — not part of the public release
+DiagnosticDump/
+
 # Build results
 [Dd]ebug/
 [Dd]ebugPublic/
@@ -46,6 +49,11 @@ bld/
 
 # macOS
 .DS_Store
+
+# Scratch / temp files created during dev
+ndp_current.txt
+MIB_IPNET_ROW2.cs
+$null
 
 # Backup files
 *.bak
