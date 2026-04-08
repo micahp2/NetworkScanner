@@ -265,7 +265,7 @@ public partial class MainWindow : Window
     {
         StartButton.Content   = "▶  Scan";
         StartButton.IsEnabled = true;
-        UpdateStatus($"Scan complete — {_results.Count} active host(s)");
+                UpdateStatus($"Scan complete - {_results.Count} active host(s)");
         App.PlayScanComplete();
     }
 
@@ -727,4 +727,4 @@ public class HighlightTextBlock : TextBlock
             pos = idx + term.Length;
         }
     }
-}
+}
