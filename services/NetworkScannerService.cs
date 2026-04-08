@@ -6,9 +6,17 @@ using System.Net.Sockets;
 using System.Net.Http;
 using System.Collections.Concurrent;
 using NetworkScanner.Models;
+using NetworkScanner.Services;
 
 public class NetworkScannerService
 {
+    private readonly DatabaseService _dbService;
+
+    public NetworkScannerService(DatabaseService? dbService = null)
+    {
+        _dbService = dbService ?? new DatabaseService();
+        _ = _dbService.InitializeAsync();
+    }
     private CancellationTokenSource? _cancellationTokenSource;
     public event EventHandler<ScanResult>? HostFound;
     public event EventHandler<string>? StatusChanged;
@@ -43,14 +51,14 @@ public class NetworkScannerService
             // maximising the chance every device's MAC lands in the OS tables.
             StatusChanged?.Invoke(this, $"Scanning {candidates.Count} IPs...");
             var liveHosts = await PingAllAsync(candidates, options, token);
-            StatusChanged?.Invoke(this, $"Found {liveHosts.Count} live hosts — resolving MACs...");
+            StatusChanged?.Invoke(this, $"Found {liveHosts.Count} live hosts - resolving MACs...");
 
             if (options.LookupMAC && liveHosts.Count > 0)
             {
-                // Phase 4: Settle delay — give the OS time to write all ARP/NDP replies
+                // Phase 4: Settle delay - give the OS time to write all ARP/NDP replies
                 await Task.Delay(800, token);
 
-                // Phase 5: Post-ping MAC snapshot — now contains entries from the ping burst
+                // Phase 5: Post-ping MAC snapshot - now contains entries from the ping burst
                 var postCache = BuildMacCache();
                 System.Diagnostics.Debug.WriteLine($"Post-ping MAC cache: {postCache.Count} entries");
                 foreach (var kv in postCache)
@@ -86,7 +94,7 @@ public class NetworkScannerService
     ///   1. GetIpNetTable2 (modern IPv4 neighbor table)
     ///   2. GetIpNetTable  (legacy ARP cache)
     ///   3. netsh interface ipv4 show neighbors (catches Stale entries APIs miss)
-    ///   4. netsh interface ipv6 show neighbors (NDP — works through Wi-Fi client isolation)
+    ///   4. netsh interface ipv6 show neighbors (NDP - works through Wi-Fi client isolation)
     ///      - Uses physical address field where available
     ///      - Extracts MAC via EUI-64 reversal for Unreachable/zero entries
     ///   5. arp -a fallback
@@ -103,7 +111,7 @@ public class NetworkScannerService
         IPHelperAPI.SnapshotArpCache(cache);
         IPHelperAPI.MergeArpCommandOutput(cache);
 
-        // IPv6 NDP source — adds entries keyed by IPv6 address
+        // IPv6 NDP source - adds entries keyed by IPv6 address
         // (these get correlated to IPv4 during enrichment via EUI-64 reversal)
         ParseNdpIntoCache(cache);
 
@@ -112,10 +120,10 @@ public class NetworkScannerService
 
     /// <summary>
     /// Parses the IPv6 NDP table and adds entries to the cache.
-    /// For entries with a real MAC in the Physical Address field: stored as IPv6→MAC.
+    /// For entries with a real MAC in the Physical Address field: stored as IPv6MAC.
     /// For Unreachable/zero entries with EUI-64 IPv6 addresses: MAC extracted from the
-    /// IPv6 address itself and stored as MAC→MAC (for later correlation).
-    /// Also builds a reverse EUI-64 MAC→IPv6 index for cross-referencing.
+    /// IPv6 address itself and stored as MACMAC (for later correlation).
+    /// Also builds a reverse EUI-64 MACIPv6 index for cross-referencing.
     /// </summary>
     private static void ParseNdpIntoCache(Dictionary<string, string> cache)
     {
@@ -153,7 +161,7 @@ public class NetworkScannerService
                 string? mac = validMac ? macField.ToUpper() : IPHelperAPI.ExtractMacFromEui64(ipStr);
                 if (mac == null) continue;
 
-                // Store IPv6→MAC so enrichment can look up by IPv6 address
+                // Store IPv6MAC so enrichment can look up by IPv6 address
                 if (!cache.ContainsKey(ipStr))
                     cache[ipStr] = mac;
 
@@ -332,10 +340,10 @@ public class NetworkScannerService
         CancellationToken token)
     {
         // Determine which subnets are directly reachable at layer 2 from this machine.
-        // Hosts on other subnets are routed through the gateway — ARP won't work for them.
+        // Hosts on other subnets are routed through the gateway - ARP won't work for them.
         var localPrefixes = GetLocalSubnetPrefixes();
 
-        // Build MAC → IPv6 reverse index from NDP cache entries (stored as IPv6→MAC).
+        // Build MAC  IPv6 reverse index from NDP cache entries (stored as IPv6MAC).
         // Where a device has both a ULA (fdd0::/fd..) and a link-local (fe80::),
         // prefer the ULA since it's a stable, routable address worth displaying.
         var macToIPv6 = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -360,7 +368,7 @@ public class NetworkScannerService
                 macToIPv6[mac] = key;
             }
         }
-        System.Diagnostics.Debug.WriteLine($"MAC→IPv6 reverse index: {macToIPv6.Count} entries");
+        System.Diagnostics.Debug.WriteLine($"MACIPv6 reverse index: {macToIPv6.Count} entries");
 
         var semaphore = new SemaphoreSlim(10);
         var tasks = new List<Task>();
@@ -389,14 +397,14 @@ public class NetworkScannerService
                     {
                         // Check whether this host is on a directly-attached subnet.
                         // If it's on a different subnet it's reachable only via the router
-                        // at layer 3 — ARP won't cross that boundary, so no MAC is possible.
+                        // at layer 3 - ARP won't cross that boundary, so no MAC is possible.
                         var ipPrefix = string.Join(".", capturedIp.Split('.').Take(3));
                         bool isLocal = localPrefixes.Contains(ipPrefix);
 
                         if (!isLocal)
                         {
                             // Show an em dash so it's clear this is expected, not a failure
-                            result.MACAddress = "—";
+                            result.MACAddress = "-";
                         }
                         else
                         {
@@ -435,9 +443,9 @@ public class NetworkScannerService
     ///   1. IPv4 ARP cache (direct lookup)
     ///   2. EUI-64 correlation: construct the expected fe80:: and fdd0:: link-local
     ///      IPv6 addresses for this host and check if NDP has them. Since we stored
-    ///      IPv6→MAC in the cache during BuildMacCache(), we just need to construct
+    ///      IPv6MAC in the cache during BuildMacCache(), we just need to construct
     ///      the possible IPv6 addresses. But without knowing the MAC first this is
-    ///      circular — so instead we scan ALL NDP IPv6 entries and check if any
+    ///      circular - so instead we scan ALL NDP IPv6 entries and check if any
     ///      EUI-64-extracted MAC is in the cache as "ndp_mac:XX-XX-XX-XX-XX-XX",
     ///      then try SendARP to confirm the mapping.
     ///   3. SendARP active probe
@@ -447,7 +455,7 @@ public class NetworkScannerService
         // 1. Direct IPv4 cache hit (ARP/netsh)
         if (macCache.TryGetValue(ipv4, out var mac) && mac != null)
         {
-            System.Diagnostics.Debug.WriteLine($"Cache hit (IPv4): {ipv4} → {mac}");
+            System.Diagnostics.Debug.WriteLine($"Cache hit (IPv4): {ipv4}  {mac}");
             return mac;
         }
 
@@ -455,7 +463,7 @@ public class NetworkScannerService
         mac = IPHelperAPI.ProbeViaSendARP(ipv4);
         if (mac != null)
         {
-            System.Diagnostics.Debug.WriteLine($"SendARP hit: {ipv4} → {mac}");
+            System.Diagnostics.Debug.WriteLine($"SendARP hit: {ipv4}  {mac}");
             return mac;
         }
 
@@ -463,7 +471,7 @@ public class NetworkScannerService
         mac = IPHelperAPI.GetMACFromCacheOnly(ipv4);
         if (mac != null)
         {
-            System.Diagnostics.Debug.WriteLine($"Cache hit (post-SendARP): {ipv4} → {mac}");
+            System.Diagnostics.Debug.WriteLine($"Cache hit (post-SendARP): {ipv4}  {mac}");
             return mac;
         }
 
@@ -511,7 +519,7 @@ public class NetworkScannerService
     {
         // Use a fresh independent CTS for the per-connection timeout so that
         // cancelling it (on timeout) does NOT propagate as OperationCanceledException
-        // up through the caller's token — that would flood the VS output window.
+        // up through the caller's token - that would flood the VS output window.
         using var cts = new CancellationTokenSource(timeout);
         try
         {
@@ -519,7 +527,7 @@ public class NetworkScannerService
             await client.ConnectAsync(ipAddress, port, cts.Token);
             return true;
         }
-        catch (OperationCanceledException) { return false; } // timeout — not an error
+        catch (OperationCanceledException) { return false; } // timeout - not an error
         catch (Exception) { return false; }
     }
 
@@ -586,3 +594,4 @@ public class NetworkScannerService
         return openPorts.OrderBy(p => p).ToList();
     }
 }
+

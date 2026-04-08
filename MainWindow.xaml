@@ -13,7 +13,7 @@
             <RowDefinition Height="Auto" />   <!-- status -->
         </Grid.RowDefinitions>
 
-        <!-- ── Toolbar ──────────────────────────────────────────────────────── -->
+        <!-- ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"? Toolbar ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"? -->
         <Border Grid.Row="0"
                 Background="{DynamicResource BackgroundBrush}"
                 BorderBrush="{DynamicResource BorderBrush}"
@@ -68,7 +68,7 @@
                 </StackPanel>
 
                 <!-- Scan / Clear / Export -->
-                <Button x:Name="StartButton" Content="▶  Scan" Width="76" Height="24"
+                <Button x:Name="StartButton" Content="Scan" Width="76" Height="24"
                         Background="#0078D4" Foreground="White" FontWeight="SemiBold"
                         FontSize="11" BorderThickness="0"
                         Click="StartButton_Click" VerticalAlignment="Bottom"
@@ -82,14 +82,14 @@
                         Click="ExportButton_Click" VerticalAlignment="Bottom"
                         Margin="0,0,5,0" />
 
-                <!-- Find button + Popup ──────────────────────────────────── -->
+                <!-- Find button + Popup ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"? -->
                 <Button x:Name="FindButton" Content="Find" Width="44" Height="24"
                         FontSize="11" Click="FindButton_Click"
                         VerticalAlignment="Bottom" ToolTip="Find / search results (Ctrl+F)" />
 
                 <!-- The search popup anchors to FindButton -->
                 <!-- StaysOpen="True" so WPF doesn't capture the mouse to detect  -->
-                <!-- outside clicks — that capture blocks DataGrid scroll events.  -->
+                <!-- outside clicks ï¿½ï¿½ï¿½?" that capture blocks DataGrid scroll events.  -->
                 <!-- Outside-click detection is handled manually in code-behind.   -->
                 <Popup x:Name="FindPopup"
                        PlacementTarget="{Binding ElementName=FindButton}"
@@ -111,11 +111,11 @@
                                      FontSize="11" VerticalContentAlignment="Center"
                                      TextChanged="SearchBox_TextChanged"
                                      KeyDown="SearchBox_KeyDown"
-                                     ToolTip="Enter = next  ·  Shift+Enter = previous  ·  Esc = close" />
-                            <Button Content="↑" Width="24" Height="22" FontSize="12"
+                                     ToolTip="Enter = next  Aï¿½ï¿½ï¿½  Shift+Enter = previous  Aï¿½ï¿½ï¿½  Esc = close" />
+                            <Button Content="^" Width="24" Height="22" FontSize="12"
                                     Click="SearchPrev_Click" Margin="4,0,2,0"
                                     ToolTip="Previous match (Shift+Enter)" />
-                            <Button Content="↓" Width="24" Height="22" FontSize="12"
+                            <Button Content="v" Width="24" Height="22" FontSize="12"
                                     Click="SearchNext_Click" Margin="0,0,6,0"
                                     ToolTip="Next match (Enter)" />
                             <TextBlock x:Name="SearchStatus" FontSize="10"
@@ -128,7 +128,7 @@
             </StackPanel>
         </Border>
 
-        <!-- ── Results grid ─────────────────────────────────────────────────── -->
+        <!-- ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"? Results grid ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"? -->
         <DataGrid Grid.Row="1" x:Name="ResultsGrid"
                   AutoGenerateColumns="False" CanUserAddRows="False"
                   BorderThickness="0"
@@ -170,7 +170,7 @@
                                         </Grid.ColumnDefinitions>
                                         <ContentPresenter Grid.Column="0" VerticalAlignment="Center" />
                                         <TextBlock Grid.Column="1" x:Name="SortArrow"
-                                                   Text="↑" FontSize="10" Foreground="#0078D4"
+                                                   Text="ï¿½ï¿½ï¿½+`" FontSize="10" Foreground="#0078D4"
                                                    VerticalAlignment="Center" Margin="2,0,4,0"
                                                    Visibility="Collapsed" />
                                     </Grid>
@@ -178,13 +178,13 @@
                                 <ControlTemplate.Triggers>
                                     <Trigger Property="SortDirection" Value="Ascending">
                                         <Setter TargetName="SortArrow"    Property="Visibility" Value="Visible" />
-                                        <Setter TargetName="SortArrow"    Property="Text"       Value="↑" />
+                                        <Setter TargetName="SortArrow"    Property="Text"       Value="^" />
                                         <Setter TargetName="HeaderBorder" Property="Background"
                                                 Value="{DynamicResource InputBackgroundBrush}" />
                                     </Trigger>
                                     <Trigger Property="SortDirection" Value="Descending">
                                         <Setter TargetName="SortArrow"    Property="Visibility" Value="Visible" />
-                                        <Setter TargetName="SortArrow"    Property="Text"       Value="↓" />
+                                        <Setter TargetName="SortArrow"    Property="Text"       Value="v" />
                                         <Setter TargetName="HeaderBorder" Property="Background"
                                                 Value="{DynamicResource InputBackgroundBrush}" />
                                     </Trigger>
@@ -224,7 +224,7 @@
                 </Style>
             </DataGrid.CellStyle>
 
-            <!-- Row style — search-match highlight -->
+            <!-- Row style ï¿½ï¿½ï¿½?" search-match highlight -->
             <DataGrid.RowStyle>
                 <Style TargetType="DataGridRow">
                     <Style.Triggers>
@@ -236,6 +236,32 @@
             </DataGrid.RowStyle>
 
             <DataGrid.Columns>
+                <DataGridTextColumn Header="Online"
+                                    Binding="{Binding IsOnline}"
+                                    Width="70"
+                                    SortMemberPath="IsOnline" />
+                <DataGridTextColumn Header="Custom Name"
+                                    Binding="{Binding CustomName, UpdateSourceTrigger=PropertyChanged}"
+                                    Width="170"
+                                    SortMemberPath="CustomName" />
+                <DataGridTemplateColumn Header="First Seen" Width="145" SortMemberPath="FirstSeen">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <local:HighlightTextBlock Text="{Binding FirstSeen, StringFormat={}{0:yyyy-MM-dd HH:mm}}"
+                                                      SearchTerm="{Binding SearchTerm}"
+                                                      Padding="8,0,4,0" VerticalAlignment="Center"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="Last Seen" Width="145" SortMemberPath="LastSeen">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <local:HighlightTextBlock Text="{Binding LastSeen, StringFormat={}{0:yyyy-MM-dd HH:mm}}"
+                                                      SearchTerm="{Binding SearchTerm}"
+                                                      Padding="8,0,4,0" VerticalAlignment="Center"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
                 <DataGridTemplateColumn Header="IP Address" Width="115" SortMemberPath="IPAddress">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
@@ -281,7 +307,7 @@
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
-                <DataGridTemplateColumn Header="IPv6 Address" Width="*" SortMemberPath="IPv6Address">
+                <DataGridTemplateColumn Header="IPv6 Address" Width="220" SortMemberPath="IPv6Address">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
                             <local:HighlightTextBlock Text="{Binding IPv6Address}"
@@ -293,7 +319,7 @@
             </DataGrid.Columns>
         </DataGrid>
 
-        <!-- ── Status bar ───────────────────────────────────────────────────── -->
+        <!-- ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"? Status bar ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"? -->
         <Border Grid.Row="2"
                 Background="{DynamicResource BackgroundBrush}"
                 BorderBrush="{DynamicResource BorderBrush}"
@@ -322,3 +348,4 @@
         </Border>
     </Grid>
 </Window>
+
