@@ -667,11 +667,17 @@ public partial class MainWindow : Window
 
     private static string GetSortKey(ScanResult r, string memberPath) => memberPath switch
     {
+        "IPAddress"       => r.IPAddress       ?? "",
         "Hostname"        => r.Hostname        ?? "",
         "MACAddress"      => r.MACAddress      ?? "",
         "Vendor"          => r.Vendor          ?? "",
         "OpenPortsString" => r.OpenPortsString ?? "",
         "IPv6Address"     => r.IPv6Address     ?? "",
+        "CustomName"      => r.CustomName      ?? "",
+        "IsOnline"        => r.IsOnline ? "1" : "0",
+        "IsCached"        => r.IsCached ? "1" : "0",
+        "FirstSeen"       => r.FirstSeen?.ToString("O") ?? "",
+        "LastSeen"        => r.LastSeen?.ToString("O") ?? "",
         _                 => r.IPAddress       ?? "",
     };
 
