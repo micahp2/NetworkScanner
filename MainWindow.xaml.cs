@@ -69,7 +69,7 @@ public partial class MainWindow : Window
 
         // Set version from assembly, fall back to csproj literal
         var ver = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-        VersionText.Text = ver != null ? $"v{ver.Major}.{ver.Minor}.{ver.Build}" : "v1.0.0";
+        VersionText.Text = ver != null ? $"v{ver.Major}.{ver.Minor}.{ver.Build}" : "v1.0.2";
 
         AutoDetectNetworkRange();
     }
@@ -144,8 +144,11 @@ public partial class MainWindow : Window
             return;
         }
 
+        // Split on commas AND newlines so users can enter multiple ranges either way:
+        //   "192.168.2.0/24, 192.168.4.0/24"  (comma-separated on one line)
+        //   or one range per line
         var ranges = RangesText.Text
-            .Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries)
+            .Split(new[] { ",", "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries)
             .Select(r => r.Trim()).Where(r => r.Length > 0).ToList();
 
         if (ranges.Count == 0)
@@ -632,7 +635,7 @@ public partial class MainWindow : Window
     // Simple ICommand wrapper for InputBindings
     private sealed class RelayCommand(Action<object?> execute) : System.Windows.Input.ICommand
     {
-        public event EventHandler? CanExecuteChanged;
+        public event EventHandler? CanExecuteChanged { add { } remove { } }
         public bool CanExecute(object? p) => true;
         public void Execute(object? p) => execute(p);
     }

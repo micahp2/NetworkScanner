@@ -302,12 +302,39 @@ public class NetworkScannerService
         return liveHosts.ToList();
     }
 
+    // Cached set of local /24 subnet prefixes (e.g. {"192.168.2", "10.0.0"})
+    // built once per scan so we don't re-query the NIC table for every host.
+    private static HashSet<string> GetLocalSubnetPrefixes()
+    {
+        var prefixes = new HashSet<string>(StringComparer.Ordinal);
+        try
+        {
+            foreach (var nic in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
+            {
+                if (nic.OperationalStatus != System.Net.NetworkInformation.OperationalStatus.Up) continue;
+                foreach (var uni in nic.GetIPProperties().UnicastAddresses)
+                {
+                    if (uni.Address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork) continue;
+                    var parts = uni.Address.ToString().Split('.');
+                    if (parts.Length == 4)
+                        prefixes.Add($"{parts[0]}.{parts[1]}.{parts[2]}");
+                }
+            }
+        }
+        catch { }
+        return prefixes;
+    }
+
     private async Task EnrichAndReportAsync(
         List<string> liveHosts,
         ScanOptions options,
         Dictionary<string, string> macCache,
         CancellationToken token)
     {
+        // Determine which subnets are directly reachable at layer 2 from this machine.
+        // Hosts on other subnets are routed through the gateway — ARP won't work for them.
+        var localPrefixes = GetLocalSubnetPrefixes();
+
         // Build MAC → IPv6 reverse index from NDP cache entries (stored as IPv6→MAC).
         // Where a device has both a ULA (fdd0::/fd..) and a link-local (fe80::),
         // prefer the ULA since it's a stable, routable address worth displaying.
@@ -360,19 +387,35 @@ public class NetworkScannerService
 
                     if (options.LookupMAC && result.IPVersion == "IPv4")
                     {
-                        result.MACAddress = ResolveMACForHost(capturedIp, macCache);
+                        // Check whether this host is on a directly-attached subnet.
+                        // If it's on a different subnet it's reachable only via the router
+                        // at layer 3 — ARP won't cross that boundary, so no MAC is possible.
+                        var ipPrefix = string.Join(".", capturedIp.Split('.').Take(3));
+                        bool isLocal = localPrefixes.Contains(ipPrefix);
 
-                        // Populate IPv6 address by looking up the MAC in our NDP reverse index
-                        if (result.MACAddress != null && macToIPv6.TryGetValue(result.MACAddress, out var ipv6))
+                        if (!isLocal)
                         {
-                            // Prefer the global ULA (fdd0::) address over link-local (fe80::)
-                            // since ULA is more meaningful to display
-                            result.IPv6Address = ipv6;
-                            System.Diagnostics.Debug.WriteLine($"IPv6 found for {capturedIp}: {ipv6}");
+                            // Show an em dash so it's clear this is expected, not a failure
+                            result.MACAddress = "—";
+                        }
+                        else
+                        {
+                            result.MACAddress = ResolveMACForHost(capturedIp, macCache);
                         }
 
-                        if (options.LookupVendor && result.MACAddress != null)
-                            result.Vendor = await LookupVendorAsync(result.MACAddress, token);
+                        // Populate IPv6 address by looking up the MAC in our NDP reverse index
+                        // Only look up IPv6 and vendor for local hosts with a real MAC
+                        if (isLocal && result.MACAddress != null)
+                        {
+                            if (macToIPv6.TryGetValue(result.MACAddress, out var ipv6))
+                            {
+                                result.IPv6Address = ipv6;
+                                System.Diagnostics.Debug.WriteLine($"IPv6 found for {capturedIp}: {ipv6}");
+                            }
+
+                            if (options.LookupVendor)
+                                result.Vendor = await LookupVendorAsync(result.MACAddress, token);
+                        }
                     }
 
                     result.OpenPorts = await ScanPortsAsync(

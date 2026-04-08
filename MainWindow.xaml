@@ -4,9 +4,9 @@
         xmlns:local="clr-namespace:NetworkScanner"
         Title="Network Scanner" Height="700" Width="1100" MinHeight="500" MinWidth="800"
         WindowStartupLocation="CenterScreen"
-        Foreground="{StaticResource TextBrush}"
-        Background="{StaticResource PanelBrush}">
-    <Grid Background="{StaticResource PanelBrush}">
+        Foreground="{DynamicResource TextBrush}"
+        Background="{DynamicResource PanelBrush}">
+    <Grid Background="{DynamicResource PanelBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />   <!-- toolbar -->
             <RowDefinition Height="*" MinHeight="300" />   <!-- grid -->
@@ -15,8 +15,8 @@
 
         <!-- ── Toolbar ──────────────────────────────────────────────────────── -->
         <Border Grid.Row="0"
-                Background="{StaticResource BackgroundBrush}"
-                BorderBrush="{StaticResource BorderBrush}"
+                Background="{DynamicResource BackgroundBrush}"
+                BorderBrush="{DynamicResource BorderBrush}"
                 BorderThickness="0,0,0,1"
                 Padding="10,7">
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
@@ -24,18 +24,21 @@
                 <!-- IP Range -->
                 <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
                     <TextBlock Text="IP Range" FontSize="10" Margin="0,0,0,2"
-                               Foreground="{StaticResource HeaderTextBrush}" />
+                               Foreground="{DynamicResource HeaderTextBrush}" />
                     <TextBox x:Name="RangesText" Width="175" Height="24" Padding="6,3"
                              VerticalContentAlignment="Center" FontSize="11">
                         <TextBox.ToolTip>
                             <ToolTip>
                                 <StackPanel>
                                     <TextBlock FontWeight="Bold" Text="IP Range formats" Margin="0,0,0,5"/>
-                                    <TextBlock FontFamily="Consolas" Text="192.168.1.0/24          CIDR (scans .1–.254)" />
-                                    <TextBlock FontFamily="Consolas" Text="192.168.1.1-254         last-octet range" />
-                                    <TextBlock FontFamily="Consolas" Text="192.168.1.100           single host" Margin="0,0,0,5"/>
-                                    <TextBlock Foreground="Gray" FontSize="10" MaxWidth="260" TextWrapping="Wrap"
-                                               Text="A /24 range covers a typical home or office network (254 addresses)." />
+                                    <TextBlock FontFamily="Consolas" Text="192.168.1.0/24              CIDR" />
+                                    <TextBlock FontFamily="Consolas" Text="192.168.1.1-254             last-octet range" />
+                                    <TextBlock FontFamily="Consolas" Text="192.168.1.100               single host" Margin="0,0,0,4"/>
+                                    <TextBlock FontWeight="SemiBold" Text="Multiple ranges (comma-separated):" Margin="0,0,0,3"/>
+                                    <TextBlock FontFamily="Consolas" Text="192.168.2.0/24, 192.168.4.0/24" />
+                                    <TextBlock FontFamily="Consolas" Text="10.0.0.0/24, 192.168.1.1-50" Margin="0,0,0,5"/>
+                                    <TextBlock Foreground="Gray" FontSize="10" MaxWidth="280" TextWrapping="Wrap"
+                                               Text="Ranges can also be entered one per line. All ranges are scanned in parallel." />
                                 </StackPanel>
                             </ToolTip>
                         </TextBox.ToolTip>
@@ -45,7 +48,7 @@
                 <!-- Ports -->
                 <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
                     <TextBlock Text="Ports" FontSize="10" Margin="0,0,0,2"
-                               Foreground="{StaticResource HeaderTextBrush}" />
+                               Foreground="{DynamicResource HeaderTextBrush}" />
                     <TextBox x:Name="PortsText" Width="210" Height="24" Padding="6,3"
                              VerticalContentAlignment="Center" FontSize="11">
                         <TextBox.ToolTip>
@@ -93,8 +96,8 @@
                        Placement="Bottom"
                        StaysOpen="True"
                        AllowsTransparency="True">
-                    <Border Background="{StaticResource BackgroundBrush}"
-                            BorderBrush="{StaticResource BorderBrush}"
+                    <Border Background="{DynamicResource BackgroundBrush}"
+                            BorderBrush="{DynamicResource BorderBrush}"
                             BorderThickness="1"
                             Padding="8,6"
                             CornerRadius="2">
@@ -117,7 +120,7 @@
                                     ToolTip="Next match (Enter)" />
                             <TextBlock x:Name="SearchStatus" FontSize="10"
                                        VerticalAlignment="Center" MinWidth="60"
-                                       Foreground="{StaticResource HeaderTextBrush}" />
+                                       Foreground="{DynamicResource HeaderTextBrush}" />
                         </StackPanel>
                     </Border>
                 </Popup>
@@ -130,12 +133,12 @@
                   AutoGenerateColumns="False" CanUserAddRows="False"
                   BorderThickness="0"
                   Sorting="ResultsGrid_Sorting"
-                  Foreground="{StaticResource GridTextBrush}"
-                  Background="{StaticResource GridBackgroundBrush}"
-                  RowBackground="{StaticResource GridBackgroundBrush}"
-                  AlternatingRowBackground="{StaticResource GridAlternatingBrush}"
+                  Foreground="{DynamicResource GridTextBrush}"
+                  Background="{DynamicResource GridBackgroundBrush}"
+                  RowBackground="{DynamicResource GridBackgroundBrush}"
+                  AlternatingRowBackground="{DynamicResource GridAlternatingBrush}"
                   GridLinesVisibility="Horizontal"
-                  HorizontalGridLinesBrush="{StaticResource BorderBrush}"
+                  HorizontalGridLinesBrush="{DynamicResource BorderBrush}"
                   HeadersVisibility="Column"
                   SelectionMode="Extended"
                   ColumnHeaderHeight="26"
@@ -144,9 +147,9 @@
             <!-- Column header with sort arrow indicator -->
             <DataGrid.ColumnHeaderStyle>
                 <Style TargetType="DataGridColumnHeader">
-                    <Setter Property="Background"      Value="{StaticResource GridHeaderBrush}" />
-                    <Setter Property="Foreground"      Value="{StaticResource GridTextBrush}" />
-                    <Setter Property="BorderBrush"     Value="{StaticResource BorderBrush}" />
+                    <Setter Property="Background"      Value="{DynamicResource GridHeaderBrush}" />
+                    <Setter Property="Foreground"      Value="{DynamicResource GridTextBrush}" />
+                    <Setter Property="BorderBrush"     Value="{DynamicResource BorderBrush}" />
                     <Setter Property="BorderThickness" Value="0,0,1,1" />
                     <Setter Property="Padding"         Value="8,0,4,0" />
                     <Setter Property="FontSize"        Value="11" />
@@ -174,20 +177,20 @@
                                 </Border>
                                 <ControlTemplate.Triggers>
                                     <Trigger Property="SortDirection" Value="Ascending">
-                                        <Setter TargetName="SortArrow"   Property="Visibility" Value="Visible" />
-                                        <Setter TargetName="SortArrow"   Property="Text"       Value="↑" />
+                                        <Setter TargetName="SortArrow"    Property="Visibility" Value="Visible" />
+                                        <Setter TargetName="SortArrow"    Property="Text"       Value="↑" />
                                         <Setter TargetName="HeaderBorder" Property="Background"
-                                                Value="{StaticResource InputBackgroundBrush}" />
+                                                Value="{DynamicResource InputBackgroundBrush}" />
                                     </Trigger>
                                     <Trigger Property="SortDirection" Value="Descending">
-                                        <Setter TargetName="SortArrow"   Property="Visibility" Value="Visible" />
-                                        <Setter TargetName="SortArrow"   Property="Text"       Value="↓" />
+                                        <Setter TargetName="SortArrow"    Property="Visibility" Value="Visible" />
+                                        <Setter TargetName="SortArrow"    Property="Text"       Value="↓" />
                                         <Setter TargetName="HeaderBorder" Property="Background"
-                                                Value="{StaticResource InputBackgroundBrush}" />
+                                                Value="{DynamicResource InputBackgroundBrush}" />
                                     </Trigger>
                                     <Trigger Property="IsMouseOver" Value="True">
                                         <Setter TargetName="HeaderBorder" Property="Background"
-                                                Value="{StaticResource GridAlternatingBrush}" />
+                                                Value="{DynamicResource GridAlternatingBrush}" />
                                     </Trigger>
                                 </ControlTemplate.Triggers>
                             </ControlTemplate>
@@ -233,8 +236,6 @@
             </DataGrid.RowStyle>
 
             <DataGrid.Columns>
-                <!-- Each column uses a HighlightTextBlock (defined in MainWindow.xaml.cs)  -->
-                <!-- that renders matched search text in a contrasting highlight colour.     -->
                 <DataGridTemplateColumn Header="IP Address" Width="115" SortMemberPath="IPAddress">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
@@ -294,8 +295,8 @@
 
         <!-- ── Status bar ───────────────────────────────────────────────────── -->
         <Border Grid.Row="2"
-                Background="{StaticResource BackgroundBrush}"
-                BorderBrush="{StaticResource BorderBrush}"
+                Background="{DynamicResource BackgroundBrush}"
+                BorderBrush="{DynamicResource BorderBrush}"
                 BorderThickness="0,1,0,0"
                 Padding="10,4">
             <Grid>
@@ -303,21 +304,17 @@
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-
-                <!-- Left: scan status message -->
                 <TextBlock x:Name="StatusText" Grid.Column="0"
                            Text="Ready" FontSize="11"
-                           Foreground="{StaticResource TextBrush}"
+                           Foreground="{DynamicResource TextBrush}"
                            VerticalAlignment="Center" />
-
-                <!-- Right: version number as a clickable link to the repo -->
                 <TextBlock Grid.Column="1" FontSize="10"
                            VerticalAlignment="Center"
-                           Foreground="{StaticResource HeaderTextBrush}">
+                           Foreground="{DynamicResource HeaderTextBrush}">
                     <Hyperlink x:Name="VersionLink"
                                NavigateUri="https://github.com/micahp2/NetworkScanner"
                                RequestNavigate="VersionLink_RequestNavigate"
-                               Foreground="{StaticResource HeaderTextBrush}">
+                               Foreground="{DynamicResource HeaderTextBrush}">
                         <Run x:Name="VersionText" Text="v1.0.0" />
                     </Hyperlink>
                 </TextBlock>

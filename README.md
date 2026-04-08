@@ -22,6 +22,8 @@ A fast, open-source Windows network scanner built with WPF and .NET 8.
 | ↕ **Sortable columns** | All columns; IP Address sorts numerically |
 | 📁 **CSV export** | All fields including IPv6 |
 | 🔔 **Sound events** | Windows notification sound on scan complete; critical stop sound when cancelled |
+| 🔄 **Live theme switching** | Responds instantly to Windows dark/light mode toggle — no restart needed |
+| 🌐 **Multi-range scanning** | Scan multiple non-contiguous subnets in one pass: `192.168.2.0/24, 192.168.4.0/24` |
 
 ---
 
@@ -169,6 +171,14 @@ NetworkScanner/
 ---
 
 ## Changelog
+
+### v1.0.2
+- Live theme switching — app responds instantly to Windows dark/light mode toggle without restart
+- Multi-range scanning — IP Range field now accepts comma-separated ranges: `192.168.2.0/24, 192.168.4.0/24, 192.168.6.1-100`
+- Off-subnet MAC indicator — devices reachable via router (different subnet) show `—` in MAC column instead of blank, making clear this is expected (ARP does not cross routers)
+- All theme brush references changed to `DynamicResource` so the entire UI repaints on theme change
+- Fixed: sort on any column after IP Address column no longer scrambles results
+- Fixed: `OperationCanceledException` flood in VS debug output silenced
 
 ### v1.0.0
 - Initial public release

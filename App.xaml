@@ -60,7 +60,7 @@
             </Setter>
         </Style>
 
-        <!-- ── TextBox — DynamicResource so dark-mode swap works at runtime ─── -->
+        <!-- ── TextBox ──────────────────────────────────────────────────────── -->
         <Style TargetType="TextBox">
             <Setter Property="Background"      Value="{DynamicResource InputBackgroundBrush}" />
             <Setter Property="Foreground"      Value="{DynamicResource InputTextBrush}" />
@@ -80,7 +80,6 @@
         </Style>
 
         <!-- ── ScrollBar — thin overlay style, DynamicResource brushes ──────── -->
-        <!-- Thumb template — shared by both orientations -->
         <ControlTemplate x:Key="ThemedThumb" TargetType="Thumb">
             <Border x:Name="Bd" CornerRadius="3" Margin="2"
                     Background="{DynamicResource ScrollThumbBrush}" />
@@ -96,12 +95,10 @@
             </ControlTemplate.Triggers>
         </ControlTemplate>
 
-        <!-- Transparent repeat-button fills track space -->
         <ControlTemplate x:Key="TrackFill" TargetType="RepeatButton">
             <Border Background="Transparent" />
         </ControlTemplate>
 
-        <!-- Vertical scrollbar -->
         <ControlTemplate x:Key="VScrollBar" TargetType="ScrollBar">
             <Border Background="{DynamicResource ScrollTrackBrush}">
                 <Track x:Name="PART_Track" IsDirectionReversed="True">
@@ -122,7 +119,6 @@
             </Border>
         </ControlTemplate>
 
-        <!-- Horizontal scrollbar -->
         <ControlTemplate x:Key="HScrollBar" TargetType="ScrollBar">
             <Border Background="{DynamicResource ScrollTrackBrush}">
                 <Track x:Name="PART_Track" IsDirectionReversed="False">
