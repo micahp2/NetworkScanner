@@ -237,6 +237,9 @@ public partial class MainWindow : Window
 
     private void AddResultToGrid(ScanResult result)
     {
+        result.IsOnline = result.IsResponsive;
+        result.IsCached = false;
+
         if (_resultIPIndex.Add(result.IPAddress))
         {
             _results.Add(result);
@@ -251,6 +254,9 @@ public partial class MainWindow : Window
             var existing = _results.FirstOrDefault(r => r.IPAddress == result.IPAddress);
             if (existing != null)
             {
+                existing.IsOnline = result.IsResponsive;
+                existing.IsCached = false;
+
                 if (result.IPv6Address != null && existing.IPv6Address == null)
                     existing.IPv6Address = result.IPv6Address;
                 if (result.Vendor != null && existing.Vendor == null)
