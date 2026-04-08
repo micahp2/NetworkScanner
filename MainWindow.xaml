@@ -236,10 +236,27 @@
             </DataGrid.RowStyle>
 
             <DataGrid.Columns>
-                <DataGridTextColumn Header="Online"
-                                    Binding="{Binding IsOnline}"
-                                    Width="70"
-                                    SortMemberPath="IsOnline" />
+                                <DataGridTemplateColumn Header="Online" Width="70" SortMemberPath="IsOnline">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <TextBlock Padding="8,0,4,0" VerticalAlignment="Center">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Text" Value="No" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsOnline}" Value="True">
+                                                <Setter Property="Text" Value="Yes" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding IsCached}" Value="True">
+                                                <Setter Property="Text" Value="" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
                 <DataGridTextColumn Header="Custom Name"
                                     Binding="{Binding CustomName, UpdateSourceTrigger=PropertyChanged}"
                                     Width="170"
@@ -348,4 +365,4 @@
         </Border>
     </Grid>
 </Window>
-
+
