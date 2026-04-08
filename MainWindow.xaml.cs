@@ -164,7 +164,7 @@ public partial class MainWindow : Window
             }
 
             if (loaded > 0)
-                UpdateStatus($"Loaded {loaded} cached device(s)");
+                RefreshStatusCounts();
         }
         catch
         {
@@ -292,6 +292,7 @@ public partial class MainWindow : Window
             item.Click += (_, _) =>
             {
                 col.Visibility = item.IsChecked ? Visibility.Visible : Visibility.Collapsed;
+                SaveColumnLayout();
             };
 
             menu.Items.Add(item);
@@ -415,7 +416,7 @@ public partial class MainWindow : Window
         if (_resultIPIndex.Add(result.IPAddress))
         {
             _results.Add(result);
-            UpdateStatus($"Found {_results.Count} device(s)");
+            RefreshStatusCounts();
             // If a search is active, check whether this new row matches
             if (!string.IsNullOrEmpty(SearchBox.Text))
                 RefreshSearchHighlights();
@@ -433,11 +434,20 @@ public partial class MainWindow : Window
                     existing.IPv6Address = result.IPv6Address;
                 if (result.Vendor != null && existing.Vendor == null)
                     existing.Vendor = result.Vendor;
+
+                RefreshStatusCounts();
             }
         }
     }
 
     private void UpdateStatus(string status) => StatusText.Text = status;
+
+    private void RefreshStatusCounts()
+    {
+        int live = _results.Count(r => !r.IsCached);
+        int cached = _results.Count(r => r.IsCached);
+        UpdateStatus($"Live: {live} | Cached: {cached} | Total: {_results.Count}");
+    }
 
     private void OnScanCompleted()
     {
