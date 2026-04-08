@@ -237,16 +237,14 @@ public partial class MainWindow : Window
             if (!File.Exists(_columnLayoutPath))
             {
                 ApplyDefaultColumnOrder();
+                SaveColumnLayout();
                 return;
             }
 
             var json = File.ReadAllText(_columnLayoutPath);
             var layout = JsonSerializer.Deserialize<List<ColumnLayoutItem>>(json);
             if (layout == null || layout.Count == 0)
-            {
-                ApplyDefaultColumnOrder();
-                return;
-            }
+                throw new InvalidDataException("Invalid column layout file");
 
             foreach (var item in layout)
             {
@@ -267,7 +265,9 @@ public partial class MainWindow : Window
         }
         catch
         {
+            // Corrupt/invalid layout: fall back and rewrite a clean file
             ApplyDefaultColumnOrder();
+            try { SaveColumnLayout(); } catch { }
         }
     }
 
