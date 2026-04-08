@@ -9,6 +9,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using System.ComponentModel;
 using System.Collections.ObjectModel;
 using NetworkScanner.Models;
@@ -26,6 +27,7 @@ public partial class MainWindow : Window
     private List<ScanResult> _searchMatches = new();
     private int _searchIndex = -1;
     private string _searchTerm = "";
+    private readonly string _columnLayoutPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NetworkScanner", "column-layout.json");
 
     public MainWindow()
     {
@@ -42,7 +44,8 @@ public partial class MainWindow : Window
         _scannerService.StatusChanged += (_, s) => Dispatcher.Invoke(() => UpdateStatus(s));
         _scannerService.ScanCompleted += (_, _) => Dispatcher.Invoke(OnScanCompleted);
 
-        Loaded += (_, _) => ApplyDefaultColumnOrder();
+        Loaded += (_, _) => LoadColumnLayoutOrDefault();
+        Closing += (_, _) => SaveColumnLayout();
 
         _ = LoadCachedDevicesAsync();
 
@@ -191,6 +194,80 @@ public partial class MainWindow : Window
                 string.Equals(c.Header?.ToString(), desired[i], StringComparison.OrdinalIgnoreCase));
             if (col != null)
                 col.DisplayIndex = i;
+        }
+    }
+
+    private sealed class ColumnLayoutItem
+    {
+        public string Header { get; set; } = "";
+        public bool Visible { get; set; }
+        public int DisplayIndex { get; set; }
+    }
+
+    private void SaveColumnLayout()
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(_columnLayoutPath)!);
+
+            var layout = ResultsGrid.Columns
+                .Where(c => !string.IsNullOrWhiteSpace(c.Header?.ToString()))
+                .Select(c => new ColumnLayoutItem
+                {
+                    Header = c.Header!.ToString()!,
+                    Visible = c.Visibility == Visibility.Visible,
+                    DisplayIndex = c.DisplayIndex
+                })
+                .OrderBy(i => i.DisplayIndex)
+                .ToList();
+
+            var json = JsonSerializer.Serialize(layout, new JsonSerializerOptions { WriteIndented = true });
+            File.WriteAllText(_columnLayoutPath, json);
+        }
+        catch
+        {
+            // non-fatal
+        }
+    }
+
+    private void LoadColumnLayoutOrDefault()
+    {
+        try
+        {
+            if (!File.Exists(_columnLayoutPath))
+            {
+                ApplyDefaultColumnOrder();
+                return;
+            }
+
+            var json = File.ReadAllText(_columnLayoutPath);
+            var layout = JsonSerializer.Deserialize<List<ColumnLayoutItem>>(json);
+            if (layout == null || layout.Count == 0)
+            {
+                ApplyDefaultColumnOrder();
+                return;
+            }
+
+            foreach (var item in layout)
+            {
+                var col = ResultsGrid.Columns.FirstOrDefault(c =>
+                    string.Equals(c.Header?.ToString(), item.Header, StringComparison.OrdinalIgnoreCase));
+                if (col != null)
+                    col.Visibility = item.Visible ? Visibility.Visible : Visibility.Collapsed;
+            }
+
+            int idx = 0;
+            foreach (var item in layout.OrderBy(i => i.DisplayIndex))
+            {
+                var col = ResultsGrid.Columns.FirstOrDefault(c =>
+                    string.Equals(c.Header?.ToString(), item.Header, StringComparison.OrdinalIgnoreCase));
+                if (col != null)
+                    col.DisplayIndex = idx++;
+            }
+        }
+        catch
+        {
+            ApplyDefaultColumnOrder();
         }
     }
 
