@@ -18,6 +18,7 @@ using Microsoft.Win32;
 public partial class MainWindow : Window
 {
     private readonly NetworkScannerService _scannerService;
+    private readonly DatabaseService _dbService;
     private readonly ObservableCollection<ScanResult> _results;
     private readonly HashSet<string> _resultIPIndex = new();
 
@@ -30,13 +31,18 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
-        _scannerService = new NetworkScannerService();
+        _dbService = new DatabaseService();
+        _ = _dbService.InitializeAsync();
+
+        _scannerService = new NetworkScannerService(_dbService);
         _results        = new ObservableCollection<ScanResult>();
         ResultsGrid.ItemsSource = _results;
 
         _scannerService.HostFound     += (_, r) => Dispatcher.Invoke(() => AddResultToGrid(r));
         _scannerService.StatusChanged += (_, s) => Dispatcher.Invoke(() => UpdateStatus(s));
         _scannerService.ScanCompleted += (_, _) => Dispatcher.Invoke(OnScanCompleted);
+
+        _ = LoadCachedDevicesAsync();
 
         // Ctrl+F opens the find popup
         InputBindings.Add(new KeyBinding(
@@ -133,6 +139,33 @@ public partial class MainWindow : Window
 
     // ── Button handlers ───────────────────────────────────────────────────────
 
+    private async Task LoadCachedDevicesAsync()
+    {
+        try
+        {
+            var devices = await _dbService.GetAllDevicesAsync();
+            int loaded = 0;
+
+            foreach (var d in devices)
+            {
+                if (string.IsNullOrWhiteSpace(d.IPAddress)) continue;
+                d.IsCached = true;
+
+                if (_resultIPIndex.Add(d.IPAddress))
+                {
+                    _results.Add(d);
+                    loaded++;
+                }
+            }
+
+            if (loaded > 0)
+                UpdateStatus($"Loaded {loaded} cached device(s)");
+        }
+        catch
+        {
+            // non-fatal startup cache load
+        }
+    }
     private void StartButton_Click(object sender, RoutedEventArgs e)
     {
         if (_scannerService.IsScanning)
@@ -166,9 +199,13 @@ public partial class MainWindow : Window
             return;
         }
 
-        _results.Clear();
-        _resultIPIndex.Clear();
         ClearSearch();
+
+        foreach (var r in _results)
+        {
+            r.IsOnline = false;
+            r.IsCached = true;
+        }
 
         StartButton.IsEnabled = false;
         StartButton.Content   = "⏹  Stop";

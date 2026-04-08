@@ -247,8 +247,24 @@
                                             <DataTrigger Binding="{Binding IsOnline}" Value="True">
                                                 <Setter Property="Text" Value="Yes" />
                                             </DataTrigger>
+
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="State" Width="80" SortMemberPath="IsCached">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <TextBlock Padding="8,0,4,0" VerticalAlignment="Center">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Text" Value="Live"/>
+                                        <Style.Triggers>
                                             <DataTrigger Binding="{Binding IsCached}" Value="True">
-                                                <Setter Property="Text" Value="" />
+                                                <Setter Property="Text" Value="Cached"/>
                                             </DataTrigger>
                                         </Style.Triggers>
                                     </Style>
