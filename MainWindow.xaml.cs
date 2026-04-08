@@ -42,6 +42,8 @@ public partial class MainWindow : Window
         _scannerService.StatusChanged += (_, s) => Dispatcher.Invoke(() => UpdateStatus(s));
         _scannerService.ScanCompleted += (_, _) => Dispatcher.Invoke(OnScanCompleted);
 
+        Loaded += (_, _) => ApplyDefaultColumnOrder();
+
         _ = LoadCachedDevicesAsync();
 
         // Ctrl+F opens the find popup
@@ -166,6 +168,62 @@ public partial class MainWindow : Window
             // non-fatal startup cache load
         }
     }
+    private void ApplyDefaultColumnOrder()
+    {
+        var desired = new[]
+        {
+            "Online",
+            "State",
+            "IP Address",
+            "Hostname",
+            "Open Ports",
+            "MAC Address",
+            "Vendor",
+            "IPv6 Address",
+            "Custom Name",
+            "Last Seen",
+            "First Seen"
+        };
+
+        for (int i = 0; i < desired.Length; i++)
+        {
+            var col = ResultsGrid.Columns.FirstOrDefault(c =>
+                string.Equals(c.Header?.ToString(), desired[i], StringComparison.OrdinalIgnoreCase));
+            if (col != null)
+                col.DisplayIndex = i;
+        }
+    }
+
+    private void ColumnsButton_Click(object sender, RoutedEventArgs e)
+    {
+        var menu = new ContextMenu();
+
+        foreach (var col in ResultsGrid.Columns)
+        {
+            var header = col.Header?.ToString();
+            if (string.IsNullOrWhiteSpace(header))
+                continue;
+
+            var item = new MenuItem
+            {
+                Header = header,
+                IsCheckable = true,
+                IsChecked = col.Visibility == Visibility.Visible,
+                StaysOpenOnClick = true
+            };
+
+            item.Click += (_, _) =>
+            {
+                col.Visibility = item.IsChecked ? Visibility.Visible : Visibility.Collapsed;
+            };
+
+            menu.Items.Add(item);
+        }
+
+        menu.PlacementTarget = ColumnsButton;
+        menu.IsOpen = true;
+    }
+
     private void StartButton_Click(object sender, RoutedEventArgs e)
     {
         if (_scannerService.IsScanning)
