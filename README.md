@@ -172,6 +172,10 @@ NetworkScanner/
 
 ## Changelog
 
+### v1.0.6
+
+- Improvements to OUI/Vendor caching.
+
 ### v1.0.5
 
 - Various fixes and improvements.

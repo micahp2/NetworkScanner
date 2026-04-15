@@ -648,94 +648,95 @@ public class NetworkScannerService
     {
         if (string.IsNullOrWhiteSpace(macAddress) || macAddress == "-") return null;
 
-        const string NotFoundSentinel = "[NOT_FOUND]";
+        const string NotFoundMarker = "[NOT_FOUND]";
+        const string ThrottledMarker = "[THROTTLED]";
 
         try
         {
             var normalized = macAddress.Replace("-", ":").ToUpperInvariant();
             if (normalized.Length < 8) return null;
-
-            // OUI is first 3 octets, e.g. AA:BB:CC
             var oui = normalized.Substring(0, 8);
 
-            // 1) In-memory cache first (per-process)
+            // 1) Fast in-memory cache
             if (_ouiCache.TryGetValue(oui, out var memCached))
             {
-                if (string.Equals(memCached, NotFoundSentinel, StringComparison.Ordinal))
+                if (string.Equals(memCached, NotFoundMarker, StringComparison.Ordinal) ||
+                    string.Equals(memCached, ThrottledMarker, StringComparison.Ordinal))
                     return null;
                 return memCached;
             }
 
-            // 2) Persistent DB cache (cross-run)
+            // 2) Persistent local DB cache (across runs)
             var dbCached = await _dbService.GetOuiVendorAsync(oui);
             if (!string.IsNullOrWhiteSpace(dbCached))
             {
                 _ouiCache[oui] = dbCached;
-                if (string.Equals(dbCached, NotFoundSentinel, StringComparison.Ordinal))
+                if (string.Equals(dbCached, NotFoundMarker, StringComparison.Ordinal) ||
+                    string.Equals(dbCached, ThrottledMarker, StringComparison.Ordinal))
                     return null;
                 return dbCached;
             }
 
-            // 3) Remote lookup only after both local caches miss
+            // 3) Remote lookup only on cache miss
             await _vendorRateLimit.WaitAsync(token);
             try
             {
-                // Re-check memory cache after waiting (another thread may have filled it)
+                // Re-check in case another task filled cache while waiting
                 if (_ouiCache.TryGetValue(oui, out memCached))
                 {
-                    if (string.Equals(memCached, NotFoundSentinel, StringComparison.Ordinal))
+                    if (string.Equals(memCached, NotFoundMarker, StringComparison.Ordinal) ||
+                        string.Equals(memCached, ThrottledMarker, StringComparison.Ordinal))
                         return null;
                     return memCached;
+                }
+
+                dbCached = await _dbService.GetOuiVendorAsync(oui);
+                if (!string.IsNullOrWhiteSpace(dbCached))
+                {
+                    _ouiCache[oui] = dbCached;
+                    if (string.Equals(dbCached, NotFoundMarker, StringComparison.Ordinal) ||
+                        string.Equals(dbCached, ThrottledMarker, StringComparison.Ordinal))
+                        return null;
+                    return dbCached;
                 }
 
                 var url = $"https://api.macvendors.com/{oui.Replace(":", "-")}";
                 var response = await _httpClient.GetAsync(url, token);
 
+                string? vendor = null;
                 if (response.IsSuccessStatusCode)
                 {
-                    var content = (await response.Content.ReadAsStringAsync(token)).Trim();
-                    var vendor = string.IsNullOrWhiteSpace(content) ? null : content;
-
-                    if (!string.IsNullOrWhiteSpace(vendor))
-                    {
-                        _ouiCache[oui] = vendor;
-                        await _dbService.CacheOuiVendorAsync(oui, vendor);
-                        await Task.Delay(200, token);
-                        return vendor;
-                    }
+                    var content = await response.Content.ReadAsStringAsync(token);
+                    vendor = string.IsNullOrWhiteSpace(content) ? null : content.Trim();
                 }
                 else if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
                 {
-                    // Negative-cache OUIs that have no public mapping to prevent repeated hits.
-                    _ouiCache[oui] = NotFoundSentinel;
-                    await _dbService.CacheOuiVendorAsync(oui, NotFoundSentinel);
-                    return null;
+                    vendor = NotFoundMarker;
                 }
                 else if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
                 {
-                    // Do not spam retry this run; short-lived in-memory negative marker.
-                    _ouiCache[oui] = NotFoundSentinel;
+                    // Avoid hammering this OUI for the remainder of the process lifetime.
+                    _ouiCache[oui] = ThrottledMarker;
                     await Task.Delay(1000, token);
                     return null;
                 }
 
-                // Other non-success responses: avoid repeated immediate retries in this run.
-                _ouiCache[oui] = NotFoundSentinel;
+                if (!string.IsNullOrWhiteSpace(vendor))
+                {
+                    _ouiCache[oui] = vendor;
+                    await _dbService.CacheOuiVendorAsync(oui, vendor);
+                    if (string.Equals(vendor, NotFoundMarker, StringComparison.Ordinal) ||
+                        string.Equals(vendor, ThrottledMarker, StringComparison.Ordinal))
+                        return null;
+                    return vendor;
+                }
+
                 return null;
             }
-            finally
-            {
-                _vendorRateLimit.Release();
-            }
+            finally { _vendorRateLimit.Release(); }
         }
-        catch (OperationCanceledException)
-        {
-            return null;
-        }
-        catch
-        {
-            return null;
-        }
+        catch (OperationCanceledException) { return null; }
+        catch { return null; }
     }
 
     private async Task<List<int>> ScanPortsAsync(
@@ -756,4 +757,6 @@ public class NetworkScannerService
 
 
 
-
+
+
+
