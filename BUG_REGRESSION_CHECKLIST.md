@@ -46,3 +46,10 @@ Expected:
 - stable MAC key
 - First Seen preserved
 - Last Seen reflects latest scan
+
+## Release Gate (do not skip)
+- [ ] Run `run_regression.ps1` and confirm PASS
+- [ ] Confirm no mojibake/encoding corruption in edited files
+- [ ] Bump version in `MainWindow.xaml` and `NetworkScanner.csproj`
+- [ ] Build Release successfully
+

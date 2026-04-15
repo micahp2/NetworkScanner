@@ -30,3 +30,34 @@ Use `BUG_REGRESSION_CHECKLIST.md` for behavior-level validation:
 - Ports updated between runs
 - Single-IP scan behavior
 - Persistence sanity check
+
+## Encoding Guardrails (recommended)
+
+Install pre-commit hook once:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-git-hooks.ps1
+```
+
+Run guardrail check manually:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify_encoding_guardrails.ps1
+```
+
+## Release checkpoint (required)
+
+Before packaging/publishing a release:
+
+1. Run regression guardrails:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\run_regression.ps1
+```
+
+2. Bump version strings:
+   - `MainWindow.xaml` (`VersionText`)
+   - `NetworkScanner.csproj` (`Version`, `FileVersion`, `AssemblyVersion`)
+
+Current version after this checkpoint: **v1.0.5**
+
