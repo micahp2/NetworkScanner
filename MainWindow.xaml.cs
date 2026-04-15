@@ -308,7 +308,7 @@ public partial class MainWindow : Window
         if (_scannerService.IsScanning)
         {
             _scannerService.StopScan();
-            StartButton.Content   = "▶  Scan";
+            StartButton.Content   = "Scan";
             StartButton.IsEnabled = true;
             App.PlayScanStopped();
             return;
@@ -345,7 +345,7 @@ public partial class MainWindow : Window
         }
 
         StartButton.IsEnabled = false;
-        StartButton.Content   = "⏹  Stop";
+        StartButton.Content   = "Stop";
         Dispatcher.InvokeAsync(async () => { await Task.Delay(300); StartButton.IsEnabled = true; });
 
         _ = _scannerService.StartScanAsync(new ScanOptions
@@ -477,7 +477,7 @@ public partial class MainWindow : Window
 
     private void OnScanCompleted()
     {
-        StartButton.Content   = "▶  Scan";
+        StartButton.Content   = "Scan";
         StartButton.IsEnabled = true;
                 UpdateStatus($"Scan complete - {_results.Count} active host(s)");
         App.PlayScanComplete();

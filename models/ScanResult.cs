@@ -46,7 +46,7 @@ public class ScanResult : INotifyPropertyChanged
     public bool     IsResponsive  { get => _isResponsive;  set => Set(ref _isResponsive, value); }
     /// <summary>Set by the search UI to highlight matching rows. Not persisted.</summary>
     public bool   IsSearchMatch { get => _isSearchMatch; set => Set(ref _isSearchMatch, value); }
-    /// <summary>Current search term ���������?" drives per-cell text highlight. Not persisted.</summary>
+    /// <summary>Current search term ?" drives per-cell text highlight. Not persisted.</summary>
     public string SearchTerm    { get => _searchTerm;    set => Set(ref _searchTerm, value); }
 
     public string? CustomName { get; set; }
@@ -55,4 +55,6 @@ public class ScanResult : INotifyPropertyChanged
     public bool IsOnline { get => _isOnline; set => Set(ref _isOnline, value); }
     public bool IsCached { get => _isCached; set => Set(ref _isCached, value); }
 }
-
+
+
+

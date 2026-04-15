@@ -82,11 +82,6 @@ public class NetworkScannerService
                     macCache[kv.Key] = kv.Value;
 
                 System.Diagnostics.Debug.WriteLine($"Combined MAC cache: {macCache.Count} entries");
-
-                // Include passive hosts discovered in local ARP/NDP cache that may block ICMP/TCP probes.
-                var passiveAdded = MergePassiveHostsFromMacCache(candidates, liveHosts, macCache);
-                if (passiveAdded > 0)
-                    StatusChanged?.Invoke(this, $"Added {passiveAdded} passive host(s) from ARP/NDP cache");
             }
 
             // Phase 6: Enrich and report
@@ -142,10 +137,10 @@ public class NetworkScannerService
 
     /// <summary>
     /// Parses the IPv6 NDP table and adds entries to the cache.
-    /// For entries with a real MAC in the Physical Address field: stored as IPv6MAC.
+    /// For entries with a real MAC in the Physical Address field: stored as IPv6MAC.
     /// For Unreachable/zero entries with EUI-64 IPv6 addresses: MAC extracted from the
-    /// IPv6 address itself and stored as MACMAC (for later correlation).
-    /// Also builds a reverse EUI-64 MACIPv6 index for cross-referencing.
+    /// IPv6 address itself and stored as MACMAC (for later correlation).
+    /// Also builds a reverse EUI-64 MACIPv6 index for cross-referencing.
     /// </summary>
     private static void ParseNdpIntoCache(Dictionary<string, string> cache)
     {
@@ -183,7 +178,7 @@ public class NetworkScannerService
                 string? mac = validMac ? macField.ToUpper() : IPHelperAPI.ExtractMacFromEui64(ipStr);
                 if (mac == null) continue;
 
-                // Store IPv6MAC so enrichment can look up by IPv6 address
+                // Store IPv6MAC so enrichment can look up by IPv6 address
                 if (!cache.ContainsKey(ipStr))
                     cache[ipStr] = mac;
 
@@ -229,6 +224,8 @@ public class NetworkScannerService
         return candidates;
     }
 
+    // NOTE: Passive host merge is intentionally disabled because it can over-report stale/proxy ARP entries.
+    // Keep helper for future opt-in tuning.
     private static int MergePassiveHostsFromMacCache(HashSet<string> candidates, List<string> liveHosts, Dictionary<string, string> macCache)
     {
         var liveSet = new HashSet<string>(liveHosts, StringComparer.Ordinal);
@@ -417,7 +414,7 @@ public class NetworkScannerService
         // Determine which subnets are directly reachable at layer 2 from this machine.
         // Hosts on other subnets are routed through the gateway - ARP won't work for them.
 
-        // Build MAC  IPv6 reverse index from NDP cache entries (stored as IPv6MAC).
+        // Build MAC  IPv6 reverse index from NDP cache entries (stored as IPv6MAC).
         // Where a device has both a ULA (fdd0::/fd..) and a link-local (fe80::),
         // prefer the ULA since it's a stable, routable address worth displaying.
         var macToIPv6 = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -442,7 +439,12 @@ public class NetworkScannerService
                 macToIPv6[mac] = key;
             }
         }
-        System.Diagnostics.Debug.WriteLine($"MACIPv6 reverse index: {macToIPv6.Count} entries");
+        System.Diagnostics.Debug.WriteLine($"MACIPv6 reverse index: {macToIPv6.Count} entries");
+
+        var macFrequency = BuildMacFrequency(macCache);
+        int macFromExactCache = 0;
+        int macFromSendArp = 0;
+        int macRejectedAmbiguous = 0;
 
         var semaphore = new SemaphoreSlim(10);
         var tasks = new List<Task>();
@@ -486,7 +488,11 @@ public class NetworkScannerService
                         }
                         else
                         {
-                            result.MACAddress = ResolveMACForHost(capturedIp, macCache);
+                            var macResolution = ResolveMACForHost(capturedIp, macCache, macFrequency);
+                            result.MACAddress = macResolution.Mac;
+                            if (macResolution.Source == "exact_cache") System.Threading.Interlocked.Increment(ref macFromExactCache);
+                            else if (macResolution.Source == "sendarp") System.Threading.Interlocked.Increment(ref macFromSendArp);
+                            else if (macResolution.Source == "rejected_ambiguous") System.Threading.Interlocked.Increment(ref macRejectedAmbiguous);
                         }
 
                         // Populate IPv6 address by looking up the MAC in our NDP reverse index
@@ -514,6 +520,8 @@ public class NetworkScannerService
         }
 
         await Task.WhenAll(tasks);
+
+        StatusChanged?.Invoke(this, $"MAC resolution: cache {macFromExactCache}, sendarp {macFromSendArp}, rejected {macRejectedAmbiguous}");
     }
 
     /// <summary>
@@ -521,48 +529,57 @@ public class NetworkScannerService
     ///   1. IPv4 ARP cache (direct lookup)
     ///   2. EUI-64 correlation: construct the expected fe80:: and fdd0:: link-local
     ///      IPv6 addresses for this host and check if NDP has them. Since we stored
-    ///      IPv6MAC in the cache during BuildMacCache(), we just need to construct
+    ///      IPv6MAC in the cache during BuildMacCache(), we just need to construct
     ///      the possible IPv6 addresses. But without knowing the MAC first this is
     ///      circular - so instead we scan ALL NDP IPv6 entries and check if any
     ///      EUI-64-extracted MAC is in the cache as "ndp_mac:XX-XX-XX-XX-XX-XX",
     ///      then try SendARP to confirm the mapping.
     ///   3. SendARP active probe
     /// </summary>
-    private static string? ResolveMACForHost(string ipv4, Dictionary<string, string> macCache)
+    private static Dictionary<string, int> BuildMacFrequency(Dictionary<string, string> macCache)
     {
-        if (macCache.TryGetValue(ipv4, out var mac))
+        var map = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var kv in macCache)
         {
-            var normalized = NormalizeMacOrNull(mac);
-            if (normalized != null)
+            if (!kv.Key.Contains('.')) continue; // IPv4-keyed entries only
+            var m = NormalizeMacOrNull(kv.Value);
+            if (m == null) continue;
+            map[m] = map.TryGetValue(m, out var c) ? c + 1 : 1;
+        }
+        return map;
+    }
+
+    private static (string? Mac, string Source) ResolveMACForHost(string ipv4, Dictionary<string, string> macCache, Dictionary<string, int> macFrequency)
+    {
+        // 1) Exact IPv4 cache mapping is highest-confidence
+        if (macCache.TryGetValue(ipv4, out var cached))
+        {
+            var exact = NormalizeMacOrNull(cached);
+            if (exact != null)
             {
-                System.Diagnostics.Debug.WriteLine($"Cache hit (IPv4): {ipv4} -> {normalized}");
-                return normalized;
+                System.Diagnostics.Debug.WriteLine($"MAC exact-cache: {ipv4} -> {exact}");
+                return (exact, "exact_cache");
             }
         }
 
+        // 2) Directed ARP probe for this exact IP
         var probed = NormalizeMacOrNull(IPHelperAPI.ProbeViaSendARP(ipv4));
         if (probed != null)
         {
-            System.Diagnostics.Debug.WriteLine($"SendARP hit: {ipv4} -> {probed}");
-            return probed;
+            // Confidence gate: if this MAC is already mapped to many IPv4s in cache,
+            // it is likely gateway/proxy/stale ARP bleed-through; reject for identity fields.
+            if (macFrequency.TryGetValue(probed, out var seenOnIps) && seenOnIps >= 4)
+            {
+                System.Diagnostics.Debug.WriteLine($"MAC rejected ambiguous: {ipv4} -> {probed} (seen on {seenOnIps} IPs)");
+                return (null, "rejected_ambiguous");
+            }
+
+            System.Diagnostics.Debug.WriteLine($"MAC sendarp: {ipv4} -> {probed}");
+            return (probed, "sendarp");
         }
 
-        var postProbe = NormalizeMacOrNull(IPHelperAPI.GetMACFromCacheOnly(ipv4));
-        if (postProbe != null)
-        {
-            System.Diagnostics.Debug.WriteLine($"Cache hit (post-SendARP): {ipv4} -> {postProbe}");
-            return postProbe;
-        }
-
-        var legacy = NormalizeMacOrNull(IPHelperAPI.GetMACAddress(ipv4));
-        if (legacy != null)
-        {
-            System.Diagnostics.Debug.WriteLine($"Legacy MAC helper hit: {ipv4} -> {legacy}");
-            return legacy;
-        }
-
-        System.Diagnostics.Debug.WriteLine($"No MAC found: {ipv4}");
-        return null;
+        System.Diagnostics.Debug.WriteLine($"MAC unresolved: {ipv4}");
+        return (null, "none");
     }
 
     private async Task<bool> PingHostAsync(string ipAddress, int timeout, CancellationToken token)
@@ -629,43 +646,96 @@ public class NetworkScannerService
 
     private async Task<string?> LookupVendorAsync(string macAddress, CancellationToken token)
     {
-        if (string.IsNullOrEmpty(macAddress)) return null;
+        if (string.IsNullOrWhiteSpace(macAddress) || macAddress == "-") return null;
+
+        const string NotFoundSentinel = "[NOT_FOUND]";
+
         try
         {
-            var normalized = macAddress.Replace("-", ":");
+            var normalized = macAddress.Replace("-", ":").ToUpperInvariant();
             if (normalized.Length < 8) return null;
-            var oui = normalized.Substring(0, 8).ToUpper();
 
-            if (_ouiCache.TryGetValue(oui, out var cached)) return cached;
+            // OUI is first 3 octets, e.g. AA:BB:CC
+            var oui = normalized.Substring(0, 8);
 
+            // 1) In-memory cache first (per-process)
+            if (_ouiCache.TryGetValue(oui, out var memCached))
+            {
+                if (string.Equals(memCached, NotFoundSentinel, StringComparison.Ordinal))
+                    return null;
+                return memCached;
+            }
+
+            // 2) Persistent DB cache (cross-run)
+            var dbCached = await _dbService.GetOuiVendorAsync(oui);
+            if (!string.IsNullOrWhiteSpace(dbCached))
+            {
+                _ouiCache[oui] = dbCached;
+                if (string.Equals(dbCached, NotFoundSentinel, StringComparison.Ordinal))
+                    return null;
+                return dbCached;
+            }
+
+            // 3) Remote lookup only after both local caches miss
             await _vendorRateLimit.WaitAsync(token);
             try
             {
-                if (_ouiCache.TryGetValue(oui, out cached)) return cached;
+                // Re-check memory cache after waiting (another thread may have filled it)
+                if (_ouiCache.TryGetValue(oui, out memCached))
+                {
+                    if (string.Equals(memCached, NotFoundSentinel, StringComparison.Ordinal))
+                        return null;
+                    return memCached;
+                }
 
                 var url = $"https://api.macvendors.com/{oui.Replace(":", "-")}";
                 var response = await _httpClient.GetAsync(url, token);
 
-                string? vendor = null;
                 if (response.IsSuccessStatusCode)
                 {
-                    var content = await response.Content.ReadAsStringAsync(token);
-                    vendor = string.IsNullOrWhiteSpace(content) ? null : content.Trim();
+                    var content = (await response.Content.ReadAsStringAsync(token)).Trim();
+                    var vendor = string.IsNullOrWhiteSpace(content) ? null : content;
+
+                    if (!string.IsNullOrWhiteSpace(vendor))
+                    {
+                        _ouiCache[oui] = vendor;
+                        await _dbService.CacheOuiVendorAsync(oui, vendor);
+                        await Task.Delay(200, token);
+                        return vendor;
+                    }
+                }
+                else if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+                {
+                    // Negative-cache OUIs that have no public mapping to prevent repeated hits.
+                    _ouiCache[oui] = NotFoundSentinel;
+                    await _dbService.CacheOuiVendorAsync(oui, NotFoundSentinel);
+                    return null;
                 }
                 else if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
                 {
-                    System.Diagnostics.Debug.WriteLine($"OUI rate limit: {oui}");
+                    // Do not spam retry this run; short-lived in-memory negative marker.
+                    _ouiCache[oui] = NotFoundSentinel;
                     await Task.Delay(1000, token);
+                    return null;
                 }
 
-                _ouiCache[oui] = vendor;
-                await Task.Delay(1100, token);
-                return vendor;
+                // Other non-success responses: avoid repeated immediate retries in this run.
+                _ouiCache[oui] = NotFoundSentinel;
+                return null;
             }
-            finally { _vendorRateLimit.Release(); }
+            finally
+            {
+                _vendorRateLimit.Release();
+            }
         }
-        catch (OperationCanceledException) { return null; }
-        catch { return null; }
+        catch (OperationCanceledException)
+        {
+            return null;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private async Task<List<int>> ScanPortsAsync(
@@ -682,4 +752,8 @@ public class NetworkScannerService
 }
 
 
-
+
+
+
+
+
