@@ -25,6 +25,18 @@ public class NetworkScannerService
     private static readonly HttpClient _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
     private static readonly ConcurrentDictionary<string, string?> _ouiCache = new();
     private static readonly SemaphoreSlim _vendorRateLimit = new SemaphoreSlim(1, 1);
+    private static readonly System.Text.RegularExpressions.Regex _macRegex =
+        new(@"^([0-9A-F]{2}-){5}[0-9A-F]{2}$", System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+    private static string? NormalizeMacOrNull(string? mac)
+    {
+        if (string.IsNullOrWhiteSpace(mac)) return null;
+        var normalized = mac.Trim().Replace(':', '-').ToUpperInvariant();
+        if (!_macRegex.IsMatch(normalized)) return null;
+        if (normalized == "00-00-00-00-00-00") return null;
+        return normalized;
+    }
+
 
     public bool IsScanning { get; private set; } = false;
 
@@ -38,7 +50,12 @@ public class NetworkScannerService
         {
             // Phase 1: Build full candidate IP list from the user's range + OS tables
             StatusChanged?.Invoke(this, "Building scan list...");
-            var candidates = BuildCandidateList(options);
+            var candidates = BuildCandidateList(options, out var explicitCount, out var augmentedCount, out var usedAugmentation);
+
+            if (usedAugmentation)
+                StatusChanged?.Invoke(this, $"Scan targets: explicit {explicitCount} + discovered {augmentedCount} = {candidates.Count}");
+            else
+                StatusChanged?.Invoke(this, $"Scan targets: explicit {explicitCount} (no connection-table augmentation)");
 
             // Phase 2: Pre-scan MAC snapshot (devices already in the OS cache)
             var macCache = options.LookupMAC
@@ -65,6 +82,11 @@ public class NetworkScannerService
                     macCache[kv.Key] = kv.Value;
 
                 System.Diagnostics.Debug.WriteLine($"Combined MAC cache: {macCache.Count} entries");
+
+                // Include passive hosts discovered in local ARP/NDP cache that may block ICMP/TCP probes.
+                var passiveAdded = MergePassiveHostsFromMacCache(candidates, liveHosts, macCache);
+                if (passiveAdded > 0)
+                    StatusChanged?.Invoke(this, $"Added {passiveAdded} passive host(s) from ARP/NDP cache");
             }
 
             // Phase 6: Enrich and report
@@ -175,30 +197,58 @@ public class NetworkScannerService
         catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"ParseNdpIntoCache: {ex.Message}"); }
     }
 
-    private HashSet<string> BuildCandidateList(ScanOptions options)
+    private HashSet<string> BuildCandidateList(ScanOptions options, out int explicitCount, out int augmentedCount, out bool usedAugmentation)
     {
-        var candidates = new HashSet<string>(StringComparer.Ordinal);
+        var explicitCandidates = new HashSet<string>(StringComparer.Ordinal);
         foreach (var range in options.IPRanges)
             foreach (var ip in ExpandRange(range))
-                candidates.Add(ip);
+                explicitCandidates.Add(ip);
 
-        // Only augment from OS connection tables when at least one input is a range-like value.
-        // For explicit single-host scans (e.g. 192.168.1.100), do not fan out.
-        bool hasRangeLikeInput = options.IPRanges.Any(r =>
-        {
-            var t = (r ?? string.Empty).Trim();
-            return t.Contains('/') || t.Contains('-');
-        });
+        explicitCount = explicitCandidates.Count;
+        var candidates = new HashSet<string>(explicitCandidates, StringComparer.Ordinal);
 
-        if (hasRangeLikeInput)
+        augmentedCount = 0;
+        usedAugmentation = false;
+
+        // Only augment from OS connection tables for CIDR inputs.
+        // Explicit single-host and dash-range scans should remain bounded to user input.
+        bool hasCidrInput = options.IPRanges.Any(r => (r ?? string.Empty).Trim().Contains('/'));
+
+        if (hasCidrInput)
         {
+            usedAugmentation = true;
             var subnet = ExtractSubnetFromRange(options.IPRanges.FirstOrDefault());
             foreach (var ip in IPHelperAPI.DiscoverDevicesFromConnectionTable(subnet))
-                candidates.Add(ip);
+            {
+                if (candidates.Add(ip))
+                    augmentedCount++;
+            }
         }
 
-        System.Diagnostics.Debug.WriteLine($"Candidate list: {candidates.Count} IPs");
+        System.Diagnostics.Debug.WriteLine($"Candidate list: total={candidates.Count}, explicit={explicitCount}, augmented={augmentedCount}, usedAug={usedAugmentation}");
         return candidates;
+    }
+
+    private static int MergePassiveHostsFromMacCache(HashSet<string> candidates, List<string> liveHosts, Dictionary<string, string> macCache)
+    {
+        var liveSet = new HashSet<string>(liveHosts, StringComparer.Ordinal);
+        int added = 0;
+
+        foreach (var ip in candidates)
+        {
+            if (ip.Contains(':')) continue;
+            if (liveSet.Contains(ip)) continue;
+            if (!IsDirectlyReachableIpv4(ip)) continue;
+
+            if (macCache.TryGetValue(ip, out var mac) && NormalizeMacOrNull(mac) != null)
+            {
+                liveHosts.Add(ip);
+                liveSet.Add(ip);
+                added++;
+            }
+        }
+
+        return added;
     }
 
     private static IEnumerable<string> ExpandRange(string range)
@@ -321,27 +371,41 @@ public class NetworkScannerService
         return liveHosts.ToList();
     }
 
-    // Cached set of local /24 subnet prefixes (e.g. {"192.168.2", "10.0.0"})
-    // built once per scan so we don't re-query the NIC table for every host.
-    private static HashSet<string> GetLocalSubnetPrefixes()
+    // Determines whether an IPv4 target is directly reachable on a local NIC subnet
+    // using each interface's actual subnet mask (not a fixed /24 assumption).
+    private static bool IsDirectlyReachableIpv4(string ipAddress)
     {
-        var prefixes = new HashSet<string>(StringComparer.Ordinal);
+        if (!IPAddress.TryParse(ipAddress, out var target) || target.AddressFamily != AddressFamily.InterNetwork)
+            return false;
+
+        uint targetInt = IpToUint(target);
+
         try
         {
             foreach (var nic in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
             {
                 if (nic.OperationalStatus != System.Net.NetworkInformation.OperationalStatus.Up) continue;
+
                 foreach (var uni in nic.GetIPProperties().UnicastAddresses)
                 {
-                    if (uni.Address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork) continue;
-                    var parts = uni.Address.ToString().Split('.');
-                    if (parts.Length == 4)
-                        prefixes.Add($"{parts[0]}.{parts[1]}.{parts[2]}");
+                    if (uni.Address.AddressFamily != AddressFamily.InterNetwork) continue;
+
+                    var localIp = uni.Address;
+                    var mask = uni.IPv4Mask;
+                    if (mask == null || mask.AddressFamily != AddressFamily.InterNetwork)
+                        mask = IPAddress.Parse("255.255.255.0");
+
+                    uint localInt = IpToUint(localIp);
+                    uint maskInt = IpToUint(mask);
+
+                    if ((targetInt & maskInt) == (localInt & maskInt))
+                        return true;
                 }
             }
         }
         catch { }
-        return prefixes;
+
+        return false;
     }
 
     private async Task EnrichAndReportAsync(
@@ -352,7 +416,6 @@ public class NetworkScannerService
     {
         // Determine which subnets are directly reachable at layer 2 from this machine.
         // Hosts on other subnets are routed through the gateway - ARP won't work for them.
-        var localPrefixes = GetLocalSubnetPrefixes();
 
         // Build MAC  IPv6 reverse index from NDP cache entries (stored as IPv6MAC).
         // Where a device has both a ULA (fdd0::/fd..) and a link-local (fe80::),
@@ -414,7 +477,7 @@ public class NetworkScannerService
                         // If it's on a different subnet it's reachable only via the router
                         // at layer 3 - ARP won't cross that boundary, so no MAC is possible.
                         var ipPrefix = string.Join(".", capturedIp.Split('.').Take(3));
-                        bool isLocal = localPrefixes.Contains(ipPrefix);
+                        bool isLocal = IsDirectlyReachableIpv4(capturedIp);
 
                         if (!isLocal)
                         {
@@ -467,27 +530,35 @@ public class NetworkScannerService
     /// </summary>
     private static string? ResolveMACForHost(string ipv4, Dictionary<string, string> macCache)
     {
-        // 1. Direct IPv4 cache hit (ARP/netsh)
-        if (macCache.TryGetValue(ipv4, out var mac) && mac != null)
+        if (macCache.TryGetValue(ipv4, out var mac))
         {
-            System.Diagnostics.Debug.WriteLine($"Cache hit (IPv4): {ipv4}  {mac}");
-            return mac;
+            var normalized = NormalizeMacOrNull(mac);
+            if (normalized != null)
+            {
+                System.Diagnostics.Debug.WriteLine($"Cache hit (IPv4): {ipv4} -> {normalized}");
+                return normalized;
+            }
         }
 
-        // 2. SendARP active probe
-        mac = IPHelperAPI.ProbeViaSendARP(ipv4);
-        if (mac != null)
+        var probed = NormalizeMacOrNull(IPHelperAPI.ProbeViaSendARP(ipv4));
+        if (probed != null)
         {
-            System.Diagnostics.Debug.WriteLine($"SendARP hit: {ipv4}  {mac}");
-            return mac;
+            System.Diagnostics.Debug.WriteLine($"SendARP hit: {ipv4} -> {probed}");
+            return probed;
         }
 
-        // 3. Re-check cache after SendARP (it may have updated the OS table)
-        mac = IPHelperAPI.GetMACFromCacheOnly(ipv4);
-        if (mac != null)
+        var postProbe = NormalizeMacOrNull(IPHelperAPI.GetMACFromCacheOnly(ipv4));
+        if (postProbe != null)
         {
-            System.Diagnostics.Debug.WriteLine($"Cache hit (post-SendARP): {ipv4}  {mac}");
-            return mac;
+            System.Diagnostics.Debug.WriteLine($"Cache hit (post-SendARP): {ipv4} -> {postProbe}");
+            return postProbe;
+        }
+
+        var legacy = NormalizeMacOrNull(IPHelperAPI.GetMACAddress(ipv4));
+        if (legacy != null)
+        {
+            System.Diagnostics.Debug.WriteLine($"Legacy MAC helper hit: {ipv4} -> {legacy}");
+            return legacy;
         }
 
         System.Diagnostics.Debug.WriteLine($"No MAC found: {ipv4}");
@@ -611,3 +682,4 @@ public class NetworkScannerService
 }
 
 
+
