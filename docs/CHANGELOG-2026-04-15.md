@@ -12,8 +12,8 @@ Stability checkpoint for scan quality, metadata consistency, and release safety.
 
 ## Current version
 - App display version: `v1.0.5`
-- Project version: `1.0.1`
-- File/assembly version: `1.0.1.0`
+- Project version: `1.0.5`
+- File/assembly version: `1.0.5.0`
 
 ## Notes
 - OUI vendor lookup should use local-first caching to avoid remote throttling.
