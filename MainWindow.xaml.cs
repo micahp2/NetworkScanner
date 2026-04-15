@@ -75,8 +75,9 @@ public partial class MainWindow : Window
             FindPopup.IsOpen = false;
         };
 
-        // Pre-fill ports
-        PortsText.Text = "80";
+        // Pre-fill ports only if blank
+        if (string.IsNullOrWhiteSpace(PortsText.Text))
+            PortsText.Text = "80";
 
         // Set version from assembly, fall back to csproj literal
         var ver = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
@@ -410,34 +411,59 @@ public partial class MainWindow : Window
 
     private void AddResultToGrid(ScanResult result)
     {
+        var now = DateTime.Now;
+
         result.IsOnline = result.IsResponsive;
         result.IsCached = false;
+        result.ScanTime = now;
+        result.FirstSeen ??= now;
+        result.LastSeen = now;
+
+        ScanResult rowForPersistence = result;
 
         if (_resultIPIndex.Add(result.IPAddress))
         {
             _results.Add(result);
-            RefreshStatusCounts();
-            // If a search is active, check whether this new row matches
-            if (!string.IsNullOrEmpty(SearchBox.Text))
-                RefreshSearchHighlights();
         }
         else
         {
-            // In-place update for late-arriving fields (e.g. IPv6, vendor)
             var existing = _results.FirstOrDefault(r => r.IPAddress == result.IPAddress);
             if (existing != null)
             {
                 existing.IsOnline = result.IsResponsive;
                 existing.IsCached = false;
+                existing.ScanTime = now;
 
-                if (result.IPv6Address != null && existing.IPv6Address == null)
-                    existing.IPv6Address = result.IPv6Address;
-                if (result.Vendor != null && existing.Vendor == null)
+                if (!string.IsNullOrWhiteSpace(result.Hostname))
+                    existing.Hostname = result.Hostname;
+                if (!string.IsNullOrWhiteSpace(result.MACAddress))
+                    existing.MACAddress = result.MACAddress;
+                if (!string.IsNullOrWhiteSpace(result.Vendor))
                     existing.Vendor = result.Vendor;
+                if (!string.IsNullOrWhiteSpace(result.IPv6Address))
+                    existing.IPv6Address = result.IPv6Address;
+                if (result.OpenPorts != null && result.OpenPorts.Count > 0)
+                    existing.OpenPorts = result.OpenPorts;
 
-                RefreshStatusCounts();
+                existing.FirstSeen ??= result.FirstSeen ?? now;
+                existing.LastSeen = now;
+
+                rowForPersistence = existing;
             }
         }
+
+        RefreshStatusCounts();
+
+        // If a search is active, refresh highlights after updates
+        if (!string.IsNullOrEmpty(SearchBox.Text))
+            RefreshSearchHighlights();
+
+        // Persist when we have a valid MAC (service method will no-op otherwise)
+        _ = Task.Run(async () =>
+        {
+            try { await _dbService.UpsertDeviceAsync(rowForPersistence); }
+            catch { /* non-fatal persistence failure */ }
+        });
     }
 
     private void UpdateStatus(string status) => StatusText.Text = status;
@@ -921,4 +947,4 @@ public class HighlightTextBlock : TextBlock
             pos = idx + term.Length;
         }
     }
-}
+}

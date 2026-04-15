@@ -182,9 +182,20 @@ public class NetworkScannerService
             foreach (var ip in ExpandRange(range))
                 candidates.Add(ip);
 
-        var subnet = ExtractSubnetFromRange(options.IPRanges.FirstOrDefault());
-        foreach (var ip in IPHelperAPI.DiscoverDevicesFromConnectionTable(subnet))
-            candidates.Add(ip);
+        // Only augment from OS connection tables when at least one input is a range-like value.
+        // For explicit single-host scans (e.g. 192.168.1.100), do not fan out.
+        bool hasRangeLikeInput = options.IPRanges.Any(r =>
+        {
+            var t = (r ?? string.Empty).Trim();
+            return t.Contains('/') || t.Contains('-');
+        });
+
+        if (hasRangeLikeInput)
+        {
+            var subnet = ExtractSubnetFromRange(options.IPRanges.FirstOrDefault());
+            foreach (var ip in IPHelperAPI.DiscoverDevicesFromConnectionTable(subnet))
+                candidates.Add(ip);
+        }
 
         System.Diagnostics.Debug.WriteLine($"Candidate list: {candidates.Count} IPs");
         return candidates;
@@ -383,11 +394,15 @@ public class NetworkScannerService
             {
                 try
                 {
+                    var now = DateTime.Now;
                     var result = new ScanResult
                     {
                         IPAddress = capturedIp,
                         IPVersion = capturedIp.Contains(':') ? "IPv6" : "IPv4",
-                        IsResponsive = true
+                        IsResponsive = true,
+                        ScanTime = now,
+                        FirstSeen = now,
+                        LastSeen = now
                     };
 
                     if (options.ResolveDNS)
@@ -594,4 +609,5 @@ public class NetworkScannerService
         return openPorts.OrderBy(p => p).ToList();
     }
 }
-
+
+

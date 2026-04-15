@@ -55,6 +55,10 @@ CREATE TABLE IF NOT EXISTS OuiCache (
     {
         if (string.IsNullOrWhiteSpace(device.MACAddress)) return;
 
+        var normalizedMac = device.MACAddress.Trim().Replace(':', '-').ToUpperInvariant();
+        if (!System.Text.RegularExpressions.Regex.IsMatch(normalizedMac, @"^([0-9A-F]{2}-){5}[0-9A-F]{2}$"))
+            return;
+
         using var connection = new SqliteConnection(_connectionString);
 
         const string sql = @"
@@ -72,7 +76,7 @@ ON CONFLICT(MacAddress) DO UPDATE SET
 
         await connection.ExecuteAsync(sql, new
         {
-            MacAddress = device.MACAddress,
+            MacAddress = normalizedMac,
             ActiveIpAddress = device.IPAddress,
             Hostname = device.Hostname,
             CustomName = device.CustomName,
@@ -147,4 +151,5 @@ ORDER BY COALESCE(LastSeen, FirstSeen) DESC;
     public Task<string?> GetOuiVendorAsync(string prefix) => GetCachedVendorAsync(prefix);
     public Task CacheOuiVendorAsync(string prefix, string vendorName) => CacheVendorAsync(prefix, vendorName);
 }
-
+
+
