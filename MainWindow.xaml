@@ -378,11 +378,11 @@
                                NavigateUri="https://github.com/micahp2/NetworkScanner"
                                RequestNavigate="VersionLink_RequestNavigate"
                                Foreground="{DynamicResource HeaderTextBrush}">
-                        <Run x:Name="VersionText" Text="v1.0.0" />
+                        <Run x:Name="VersionText" Text="v1.0.5" />
                     </Hyperlink>
                 </TextBlock>
             </Grid>
         </Border>
     </Grid>
 </Window>
-
+
