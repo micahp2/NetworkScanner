@@ -1,23 +1,24 @@
-NetworkScanner 📡
-A high-velocity, lightweight Windows IPv4 and Port Scanner built for speed and simplicity.
+# NetworkScanner 📡
+
+**A high-velocity, lightweight Windows IPv4 and Port Scanner built for speed and simplicity.**
 
 NetworkScanner is a "vibe-coded" utility designed for sysadmins, developers, and power users who need a no-nonsense tool to audit local networks without the bloat of enterprise suites.
 
-🚀 Features
-Multi-threaded IPv4 Scanning: Rapidly identify every active device on your subnet.
-Precision Port Mapping: Scan common service ports or defined ranges to identify running services.
-Manufacturer/Vendor Detection: Automatically resolves MAC addresses to hardware vendors.
-Zero Installation: Portable single-binary execution. Just point and shoot.
+## 🚀 Features
+- Multi-threaded IPv4 Scanning: Rapidly identify every active device on your subnet.
+- Precision Port Mapping: Scan common service ports or defined ranges to identify running services.
+- Manufacturer/Vendor Detection: Automatically resolves MAC addresses to hardware vendors.
+- Zero Installation: Portable single-binary execution. Just point and shoot.
 
-🛠 Usage
-Download the latest NetworkScanner.exe from the Releases page.
-Run the executable.
-Enter your target IP range or scan your local subnet.
+## 🛠 Usage
+- Download the latest NetworkScanner.exe from the Releases page.
+- Run the executable.
+- Enter your target IP range or scan your local subnet.
 
-💻 Tech Stack
-Language: C# / .NET
-Methodology: Vibe-Coded for high-altitude operational finishing.
-Developed by Micah Stroud. Targeted at those who value uptime and operational clarity.
+## 💻 Tech Stack
+- Language: C# / .NET
+- Methodology: Vibe-Coded for high-altitude operational finishing.
+- Developed by Micah Stroud. Targeted at those who value uptime and operational clarity.
 
 | | |
 |---|---|
