@@ -1,12 +1,33 @@
-# Network Scanner
+# NetworkScanner ðŸ“¡
 
-A fast, open-source Windows network scanner built with WPF and .NET 8.
+**A high-velocity, lightweight Windows IPv4 and Port Scanner built for speed and simplicity.**
 
-**[https://github.com/micahp2/NetworkScanner](https://github.com/micahp2/NetworkScanner)**
+NetworkScanner is a "vibe-coded" utility designed for sysadmins, developers, and power users who need a no-nonsense tool to audit local networks without the bloat of enterprise suites.
+
+## ðŸš€ Features
+- **Multi-threaded IPv4 Scanning:** Rapidly identify every active device on your subnet.
+- **Precision Port Mapping:** Scan common service ports or defined ranges to identify running services.
+- **Manufacturer/Vendor Detection:** Automatically resolves MAC addresses to hardware vendors.
+- **Zero Installation:** Portable single-binary execution. Just point and shoot.
+- **Real-time Console Output:** Visual feedback for every heartbeat and discovery.
+
+## ðŸ›  Usage
+1. Download the latest `NetworkScanner.exe` from the [Releases](https://github.com/micahp2/NetworkScanner/releases) page.
+2. Run the executable.
+3. Enter your target IP range or scan your local subnet.
+4. Export or view results immediately.
+
+## ðŸ’» Tech Stack
+- **Language:** C#
+- **Platform:** .NET / Windows WinForms
+- **Methodology:** Vibe-Coded for high-altitude operational finishing.
+
+## ðŸ¤ Contributing
+Feedback and PRs are welcome. This project is maintained to ensure friction-free network auditing.
 
 ---
+*Targeted at those who value uptime and operational clarity.*
 
-## Features
 
 | | |
 |---|---|
