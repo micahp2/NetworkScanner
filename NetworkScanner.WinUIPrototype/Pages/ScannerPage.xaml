@@ -1,0 +1,99 @@
+<Page
+    x:Class="NetworkScanner.WinUIPrototype.Pages.ScannerPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <Grid Padding="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Top controls -->
+        <StackPanel Grid.Row="0" Orientation="Vertical" Margin="0,0,0,8">
+            <TextBlock Text="Scanner" FontSize="20"/>
+
+            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                <TextBlock Text="IP Ranges" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <TextBox Width="220" Text="{Binding IPRanges, Mode=TwoWay}"/>
+
+                <TextBlock Text="Ports" VerticalAlignment="Center" Margin="16,0,8,0"/>
+                <TextBox Width="180" Text="{Binding Ports, Mode=TwoWay}"/>
+
+                <Button Content="{Binding ScanButtonText}" Command="{Binding StartStopScanCommand}" Margin="12,0,0,0"/>
+                <Button Content="Clear" Command="{Binding ClearCommand}" Margin="8,0,0,0"/>
+                <Button Content="Export" Command="{Binding ExportCommand}" Margin="8,0,0,0"/>
+                <Button Content="Columns" Click="ColumnsButton_Click" Margin="8,0,0,0"/>
+                <Button Content="Find" Command="{Binding ToggleFindCommand}" Margin="8,0,0,0"/>
+            </StackPanel>
+        </StackPanel>
+
+        <!-- Find panel -->
+        <StackPanel Grid.Row="1" x:Name="FindPanel" Orientation="Horizontal" Visibility="Collapsed" Margin="0,0,0,8">
+            <TextBox Width="340" Text="{Binding SearchText, Mode=TwoWay}"/>
+            <Button Content="Prev" Command="{Binding FindPreviousCommand}" Margin="8,0,0,0"/>
+            <Button Content="Next" Command="{Binding FindNextCommand}" Margin="8,0,0,0"/>
+            <TextBlock Text="{Binding SearchStatusText}" VerticalAlignment="Center" Margin="8,0,0,0"/>
+        </StackPanel>
+
+        <!-- Main area -->
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="320"/>
+            </Grid.ColumnDefinitions>
+
+            <ListView Grid.Column="0"
+                      ItemsSource="{Binding Results}"
+                      SelectionMode="Single"
+                      SelectedItem="{Binding SelectedResult, Mode=TwoWay}">
+                <ListView.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Orientation="Horizontal" Margin="0,2,0,2">
+                            <TextBlock Text="{Binding IPAddress}" Width="120"/>
+                            <TextBlock Text="{Binding Hostname}" Width="170"/>
+                            <TextBlock Text="{Binding MACAddress}" Width="140"/>
+                            <TextBlock Text="{Binding Vendor}" Width="150"/>
+                            <TextBlock Text="{Binding OpenPorts}" Width="120"/>
+                            <TextBlock Text="{Binding IPv6Address}" Width="220"/>
+                            <TextBlock Text="{Binding StateLabel}" Width="80"/>
+                        </StackPanel>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+
+            <StackPanel Grid.Column="1" Margin="12,0,0,0">
+                <TextBlock Text="Context Actions (mock)" FontSize="16"/>
+
+                <TextBlock Text="Copy field" Margin="0,8,0,4"/>
+                <StackPanel Orientation="Horizontal">
+                    <Button Content="IP" Command="{Binding CopyFieldCommand}" CommandParameter="IP Address"/>
+                    <Button Content="Hostname" Command="{Binding CopyFieldCommand}" CommandParameter="Hostname" Margin="6,0,0,0"/>
+                    <Button Content="MAC" Command="{Binding CopyFieldCommand}" CommandParameter="MAC Address" Margin="6,0,0,0"/>
+                </StackPanel>
+
+                <TextBlock Text="Browse" Margin="0,8,0,4"/>
+                <StackPanel Orientation="Horizontal">
+                    <Button Content=":80" Command="{Binding BrowsePortCommand}" CommandParameter=":80 (http)"/>
+                    <Button Content=":443" Command="{Binding BrowsePortCommand}" CommandParameter=":443 (https)" Margin="6,0,0,0"/>
+                </StackPanel>
+
+                <TextBlock Text="Shell" Margin="0,8,0,4"/>
+                <StackPanel Orientation="Horizontal">
+                    <Button Content="SSH" Command="{Binding ShellCommand}" CommandParameter="SSH :22"/>
+                    <Button Content="RDP" Command="{Binding ShellCommand}" CommandParameter="RDP :3389" Margin="6,0,0,0"/>
+                </StackPanel>
+
+                <TextBlock Text="Last mock action" Margin="0,12,0,4"/>
+                <TextBlock Text="{Binding MockActionLog}" TextWrapping="Wrap"/>
+            </StackPanel>
+        </Grid>
+
+        <TextBlock Grid.Row="3" Text="{Binding StatusText}" Margin="0,8,0,0"/>
+    </Grid>
+</Page>

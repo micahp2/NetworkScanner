@@ -1,0 +1,32 @@
+<Page
+    x:Class="NetworkScanner.WinUIPrototype.Pages.FeatureMapPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <Grid Padding="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Text="Feature Mapping Overview" Style="{ThemeResource TitleTextBlockStyle}" />
+
+        <RichTextBlock Grid.Row="1" TextWrapping="Wrap" Margin="0,12,0,0">
+            <Paragraph>
+                <Run Text="A complete mapping document is included at docs/WINUI_PROTOTYPE_FEATURE_MAP.md." />
+            </Paragraph>
+            <Paragraph>
+                <Run Text="This page is a quick in-app reference for developers reviewing parity between the existing WPF app and the new WinUI 3 prototype." />
+            </Paragraph>
+            <Paragraph>
+                <Run Text="Scanner page: toolbar, find panel, result grid, column picker, context action mocks, status footer." />
+            </Paragraph>
+            <Paragraph>
+                <Run Text="Settings page: scan flags, timeouts, theme mode options, sound and persistence toggles (mock)." />
+            </Paragraph>
+        </RichTextBlock>
+    </Grid>
+</Page>

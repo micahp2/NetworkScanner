@@ -18,6 +18,14 @@
 
   <ItemGroup>
     <Compile Remove="DiagnosticDump\**" />
+    <Compile Remove="NetworkScanner.WinUIPrototype\**\*.cs" />
+    <Page Remove="NetworkScanner.WinUIPrototype\**\*.xaml" />
+    <None Remove="NetworkScanner.WinUIPrototype\**\*" />
+    <EmbeddedResource Remove="NetworkScanner.WinUIPrototype\**\*" />
+    <Compile Remove="_scratch\**\*.cs" />
+    <Page Remove="_scratch\**\*.xaml" />
+    <None Remove="_scratch\**\*" />
+    <EmbeddedResource Remove="_scratch\**\*" />
   </ItemGroup>
 
   <ItemGroup>
