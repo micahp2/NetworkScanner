@@ -76,18 +76,19 @@ public class ScanResultRow : ObservableObject
     public string OpenPorts { get => _openPorts; set => SetProperty(ref _openPorts, value); }
     public string IPv6Address { get => _ipv6Address; set => SetProperty(ref _ipv6Address, value); }
 
-    public string StateLabel => IsCached ? "Cached" : "Live";
+    public string StateLabel => IsCached ? "Cached" : (IsOnline ? "Live" : "Offline");
 
     public SolidColorBrush StateBrush
     {
         get
         {
+            if (IsCached)
+                return new SolidColorBrush(ColorHelper.FromArgb(0xFF, 0xE1, 0xB8, 0x54)); // cached/amber
+
             if (!IsOnline)
                 return new SolidColorBrush(ColorHelper.FromArgb(0xFF, 0xE0, 0x5A, 0x5A)); // offline
 
-            return IsCached
-                ? new SolidColorBrush(ColorHelper.FromArgb(0xFF, 0xE1, 0xB8, 0x54)) // cached/amber
-                : new SolidColorBrush(ColorHelper.FromArgb(0xFF, 0x39, 0xD3, 0x53)); // live/green
+            return new SolidColorBrush(ColorHelper.FromArgb(0xFF, 0x39, 0xD3, 0x53)); // live/green
         }
     }
 
@@ -95,6 +96,8 @@ public class ScanResultRow : ObservableObject
     public SolidColorBrush IPAddressCellBrush => CellBrush("IPAddress");
     public SolidColorBrush MACAddressCellBrush => CellBrush("MACAddress");
     public SolidColorBrush StatusCellBrush => CellBrush("StateLabel");
+    public SolidColorBrush FirstSeenCellBrush => CellBrush("FirstSeen");
+    public SolidColorBrush LastSeenCellBrush => CellBrush("LastSeen");
     public SolidColorBrush VendorCellBrush => CellBrush("Vendor");
     public SolidColorBrush OpenPortsCellBrush => CellBrush("OpenPorts");
 
@@ -105,6 +108,8 @@ public class ScanResultRow : ObservableObject
         RaisePropertyChanged(nameof(IPAddressCellBrush));
         RaisePropertyChanged(nameof(MACAddressCellBrush));
         RaisePropertyChanged(nameof(StatusCellBrush));
+        RaisePropertyChanged(nameof(FirstSeenCellBrush));
+        RaisePropertyChanged(nameof(LastSeenCellBrush));
         RaisePropertyChanged(nameof(VendorCellBrush));
         RaisePropertyChanged(nameof(OpenPortsCellBrush));
     }
@@ -115,4 +120,4 @@ public class ScanResultRow : ObservableObject
             ? new SolidColorBrush(ColorHelper.FromArgb(0x1C, 0x4A, 0x8D, 0xF7))
             : new SolidColorBrush(ColorHelper.FromArgb(0x00, 0x00, 0x00, 0x00));
     }
-}
+}

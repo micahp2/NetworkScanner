@@ -479,7 +479,12 @@ public partial class MainWindow : Window
     {
         StartButton.Content   = "Scan";
         StartButton.IsEnabled = true;
-                UpdateStatus($"Scan complete - {_results.Count} active host(s)");
+
+        int live = _results.Count(r => !r.IsCached);
+        int cached = _results.Count(r => r.IsCached);
+        int total = _results.Count;
+        UpdateStatus($"Scan complete | Live: {live} | Cached: {cached} | Total: {total}");
+
         App.PlayScanComplete();
     }
 

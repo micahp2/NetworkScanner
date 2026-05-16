@@ -11,10 +11,28 @@ using NetworkScanner.WinUIPrototype.Pages;
 using NetworkScanner.WinUIPrototype.ViewModels;
 using WinRT.Interop;
 
+using System.IO;
+using System.Text.Json;
+using Microsoft.UI.Windowing;
+using Windows.Graphics;
 namespace NetworkScanner.WinUIPrototype;
 
 public sealed partial class MainWindow : Window
 {
+    private AppWindow? _appWindow;
+    private bool _windowPlacementRestored;
+
+    private sealed class SavedWindowPlacement
+    {
+        public int X { get; set; }
+        public int Y { get; set; }
+        public int Width { get; set; }
+        public int Height { get; set; }
+        public bool IsMaximized { get; set; }
+    }
+
+    private static string WindowPlacementFilePath =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NetworkScanner", "WinUIPrototype", "window-state.json");
     private readonly ScannerViewModel _vm;
     private readonly ColumnDefinition _navColumn;
     private readonly ContentControl _contentHost;
@@ -128,6 +146,10 @@ public sealed partial class MainWindow : Window
 
         root.Children.Add(body);
         Content = root;
+
+        InitializeWindowInterop();
+        Activated += MainWindow_Activated;
+        Closed += MainWindow_Closed;
 
         SelectView("live");
         UpdateSearchButtonVisual();
@@ -533,4 +555,95 @@ public sealed partial class MainWindow : Window
     private const int SW_MINIMIZE = 6;
     private const int SW_MAXIMIZE = 3;
     private const int SW_RESTORE = 9;
+
+    private void InitializeWindowInterop()
+    {
+        var hwnd = WindowNative.GetWindowHandle(this);
+        var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd);
+        _appWindow = AppWindow.GetFromWindowId(windowId);
+    }
+
+    private void MainWindow_Activated(object sender, WindowActivatedEventArgs args)
+    {
+        if (_windowPlacementRestored) return;
+        _windowPlacementRestored = true;
+        TryRestoreWindowPlacement();
+    }
+
+    private void MainWindow_Closed(object sender, WindowEventArgs args)
+    {
+        TrySaveWindowPlacement();
+    }
+
+    private void TryRestoreWindowPlacement()
+    {
+        try
+        {
+            if (_appWindow is null) return;
+            if (!File.Exists(WindowPlacementFilePath)) return;
+
+            var json = File.ReadAllText(WindowPlacementFilePath);
+            var state = JsonSerializer.Deserialize<SavedWindowPlacement>(json);
+            if (state is null) return;
+
+            var width = Math.Max(800, state.Width);
+            var height = Math.Max(600, state.Height);
+
+            _appWindow.MoveAndResize(new RectInt32(state.X, state.Y, width, height));
+
+            if (state.IsMaximized && _appWindow.Presenter is OverlappedPresenter presenter)
+            {
+                presenter.Maximize();
+            }
+        }
+        catch
+        {
+            // non-fatal
+        }
+    }
+
+    private void TrySaveWindowPlacement()
+    {
+        try
+        {
+            if (_appWindow is null) return;
+
+            var state = new SavedWindowPlacement
+            {
+                X = _appWindow.Position.X,
+                Y = _appWindow.Position.Y,
+                Width = _appWindow.Size.Width,
+                Height = _appWindow.Size.Height,
+                IsMaximized = _appWindow.Presenter is OverlappedPresenter p && p.State == OverlappedPresenterState.Maximized
+            };
+
+            var dir = Path.GetDirectoryName(WindowPlacementFilePath);
+            if (!string.IsNullOrWhiteSpace(dir))
+                Directory.CreateDirectory(dir);
+
+            var json = JsonSerializer.Serialize(state, new JsonSerializerOptions { WriteIndented = true });
+            File.WriteAllText(WindowPlacementFilePath, json);
+        }
+        catch
+        {
+            // non-fatal
+        }
+    }
+
+
+    private AppWindow? GetCurrentAppWindow()
+    {
+        try
+        {
+            var hwnd = WindowNative.GetWindowHandle(this);
+            if (hwnd == IntPtr.Zero) return null;
+            var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd);
+            return AppWindow.GetFromWindowId(windowId);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
 }

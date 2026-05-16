@@ -1,21 +1,44 @@
 using System.Collections.ObjectModel;
+using System.Linq;
 using System.Text;
 using NetworkScanner.WinUIPrototype.Common;
 using NetworkScanner.WinUIPrototype.Models;
+using NetworkScanner.WinUIPrototype.Services;
+using NetworkScanner.Services;
+using NetworkScanner.Models;
+using Microsoft.UI.Dispatching;
+using System.Net;
+using System.Net.Sockets;
 
 namespace NetworkScanner.WinUIPrototype.ViewModels;
+
+public enum ScanLifecycleState
+{
+    Idle,
+    Scanning,
+    Cancelling,
+    Completed,
+    Cancelled,
+    Faulted
+}
 
 public class ScannerViewModel : ObservableObject
 {
     private readonly Random _random = new();
+    private readonly ObservableCollection<string> _scanStateTransitions = new();
+    private readonly IScannerBackend _backend;
+    private readonly DispatcherQueue? _dispatcherQueue;
+    private readonly DatabaseService _dbService;
+    private readonly HashSet<string> _resultIPIndex = new(StringComparer.OrdinalIgnoreCase);
     private CancellationTokenSource? _scanCts;
 
-    private string _ipRanges = "192.168.1.0/24";
+    private string _ipRanges = string.Empty;
     private string _ports = "80";
     private string _statusText = "Ready";
     private string _searchText = string.Empty;
     private string _scanButtonText = "Scan";
     private bool _isScanning;
+    private ScanLifecycleState _scanState = ScanLifecycleState.Idle;
     private bool _isSearching;
     private bool _showFindPanel;
     private string _mockActionLog = "No action yet.";
@@ -23,10 +46,17 @@ public class ScannerViewModel : ObservableObject
     private ScanResultRow? _selectedResult;
     private string _sortColumn = "IPAddress";
     private bool _sortAscending = true;
+    private string _lastBackendStatus = "Ready";
 
     public ScannerViewModel()
     {
+        _backend = ScannerBackendFactory.Create();
+        _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
+        AutoDetectNetworkRange();
+        _dbService = new DatabaseService();
+        _ = _dbService.InitializeAsync();
         Results = new ObservableCollection<ScanResultRow>();
+        ScanStateTransitions = new ReadOnlyObservableCollection<string>(_scanStateTransitions);
         ColumnSettings = new ObservableCollection<ColumnSetting>
         {
             new() { Key = "Online", Header = "Online" },
@@ -53,13 +83,21 @@ public class ScannerViewModel : ObservableObject
         BrowsePortCommand = new RelayCommand(p => LogMockAction($"Browse: {p}"));
         ShellCommand = new RelayCommand(p => LogMockAction($"Shell: {p}"));
 
-        LoadMockCachedDevices();
+        if (string.Equals(_backend.Name, "Mock", StringComparison.OrdinalIgnoreCase))
+        {
+            LoadMockCachedDevices();
+        }
+        else
+        {
+            _ = LoadCachedDevicesAsync();
+        }
         ApplySortColumnHighlights();
         RefreshStatus();
     }
 
     public ObservableCollection<ScanResultRow> Results { get; }
     public ObservableCollection<ColumnSetting> ColumnSettings { get; }
+    public ReadOnlyObservableCollection<string> ScanStateTransitions { get; }
 
     public RelayCommand StartStopScanCommand { get; }
     public RelayCommand ClearCommand { get; }
@@ -135,11 +173,24 @@ public class ScannerViewModel : ObservableObject
         set => SetProperty(ref _scanButtonText, value);
     }
 
+    public ScanLifecycleState ScanState
+    {
+        get => _scanState;
+        private set => SetProperty(ref _scanState, value);
+    }
     public bool IsScanning
     {
         get => _isScanning;
-        set => SetProperty(ref _isScanning, value);
+        set
+        {
+            if (SetProperty(ref _isScanning, value))
+            {
+                RaisePropertyChanged(nameof(ScanActivityLabel));
+            }
+        }
     }
+
+    public string ScanActivityLabel => IsScanning ? "Scanning" : "Stopped";
 
     public string MockActionLog
     {
@@ -186,55 +237,176 @@ public class ScannerViewModel : ObservableObject
 
     public bool CanNavigateSearch => SearchMatchCount > 1;
 
+    private void AutoDetectNetworkRange()
+    {
+        if (!string.IsNullOrWhiteSpace(IPRanges)) return;
+
+        try
+        {
+            var nics = System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces();
+            foreach (var nic in nics)
+            {
+                if (nic.OperationalStatus != System.Net.NetworkInformation.OperationalStatus.Up) continue;
+                if (nic.NetworkInterfaceType != System.Net.NetworkInformation.NetworkInterfaceType.Ethernet &&
+                    nic.NetworkInterfaceType != System.Net.NetworkInformation.NetworkInterfaceType.Wireless80211) continue;
+
+                foreach (var uni in nic.GetIPProperties().UnicastAddresses)
+                {
+                    if (uni.Address.AddressFamily != AddressFamily.InterNetwork) continue;
+                    var parts = uni.Address.ToString().Split('.');
+                    if (parts.Length != 4) continue;
+                    if (parts[0] == "169" && parts[1] == "254") continue;
+                    if (parts[0] == "127") continue;
+
+                    IPRanges = $"{parts[0]}.{parts[1]}.{parts[2]}.0/24";
+                    return;
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(IPRanges))
+            {
+                IPRanges = "192.168.1.0/24";
+            }
+        }
+        catch
+        {
+            if (string.IsNullOrWhiteSpace(IPRanges))
+            {
+                IPRanges = "192.168.1.0/24";
+            }
+        }
+    }
+
     private async Task StartStopScanAsync()
     {
-        if (IsScanning)
+        if (ScanState == ScanLifecycleState.Cancelling)
         {
-            _scanCts?.Cancel();
-            IsScanning = false;
-            ScanButtonText = "Scan";
-            StatusText = "Scan stopped (mock).";
             return;
         }
 
-        IsScanning = true;
-        ScanButtonText = "Stop";
+        if (ScanState == ScanLifecycleState.Scanning || IsScanning)
+        {
+            TransitionLifecycle(ScanLifecycleState.Cancelling, "Stopping scan...");
+            _scanCts?.Cancel();
+            return;
+        }
+
+        _scanCts?.Dispose();
         _scanCts = new CancellationTokenSource();
 
         try
         {
             var token = _scanCts.Token;
-            var hosts = BuildMockTargetList();
-            var freshCount = 0;
 
-            StatusText = $"Building scan list... {hosts.Count} targets";
-            await Task.Delay(300, token);
-
-            foreach (var host in hosts)
+            RunOnUi(() =>
             {
-                token.ThrowIfCancellationRequested();
-                await Task.Delay(_random.Next(70, 190), token);
+                foreach (var r in Results)
+                {
+                    r.IsOnline = false;
+                    r.IsCached = true;
+                }
+                UpdateStatusWithCounts("Building scan list...");
+            });
 
-                Results.Insert(0, host);
+            TransitionLifecycle(ScanLifecycleState.Scanning, $"Scanning with {_backend.Name} backend...");
+
+            var hosts = await _backend.ScanAsync(
+                IPRanges,
+                Ports,
+                ScanIPv4,
+                ScanIPv6,
+                token,
+                onHostFound: row => RunOnUi(() =>
+                {
+                    var existing = Results.FirstOrDefault(r => string.Equals(r.IPAddress, row.IPAddress, StringComparison.OrdinalIgnoreCase));
+                    var now = DateTimeOffset.Now;
+
+                    ScanResultRow persistTarget;
+
+                    if (existing is null)
+                    {
+                        row.IsOnline = true;
+                        row.IsCached = false;
+                        row.FirstSeen ??= now;
+                        row.LastSeen ??= now;
+                        Results.Add(row);
+                        _resultIPIndex.Add(row.IPAddress);
+                        persistTarget = row;
+                    }
+                    else
+                    {
+                        existing.IsOnline = true;
+                        existing.IsCached = false;
+                        existing.LastSeen = now;
+                        existing.FirstSeen ??= row.FirstSeen ?? now;
+
+                        if (!string.IsNullOrWhiteSpace(row.Hostname)) existing.Hostname = row.Hostname;
+                        if (!string.IsNullOrWhiteSpace(row.MACAddress)) existing.MACAddress = row.MACAddress;
+                        if (!string.IsNullOrWhiteSpace(row.Vendor)) existing.Vendor = row.Vendor;
+                        if (!string.IsNullOrWhiteSpace(row.IPv6Address)) existing.IPv6Address = row.IPv6Address;
+                        if (!string.IsNullOrWhiteSpace(row.OpenPorts)) existing.OpenPorts = row.OpenPorts;
+                        if (!string.IsNullOrWhiteSpace(row.CustomName)) existing.CustomName = row.CustomName;
+                        persistTarget = existing;
+                    }
+
+                    _ = PersistDeviceAsync(persistTarget);
+
+                    ApplySortColumnHighlights();
+                    ApplySearchHighlights();
+                    UpdateStatusWithCounts();
+                }),
+                onStatus: status => RunOnUi(() =>
+                {
+                    _lastBackendStatus = status;
+                    UpdateStatusWithCounts(status);
+                }));
+
+            token.ThrowIfCancellationRequested();
+
+            RunOnUi(() =>
+            {
                 ApplySortColumnHighlights();
                 ApplySearchHighlights();
-                freshCount++;
-                RefreshStatus();
-            }
+                TransitionLifecycle(ScanLifecycleState.Completed, $"Scan complete - {Results.Count} active host(s)");
+                UpdateStatusWithCounts($"Scan complete - {Results.Count} active host(s)");
+            });
 
-            StatusText = $"Scan complete - {freshCount} live host(s) (mock)";
-            LogMockAction("Scan complete sound event (mock).\nVendor lookup, DNS, MAC, and port scan were simulated.");
+            LogMockAction($"Scan completed via {_backend.Name} backend.");
         }
         catch (OperationCanceledException)
         {
-            StatusText = "Scan cancelled (mock).";
+            RunOnUi(() =>
+            {
+                TransitionLifecycle(ScanLifecycleState.Cancelled, "Scan cancelled.");
+                UpdateStatusWithCounts("Scan cancelled");
+            });
+        }
+        catch (Exception ex)
+        {
+            RunOnUi(() =>
+            {
+                TransitionLifecycle(ScanLifecycleState.Faulted, $"Scan failed: {ex.Message}");
+                UpdateStatusWithCounts($"Error: {ex.Message}");
+            });
         }
         finally
         {
-            IsScanning = false;
-            ScanButtonText = "Scan";
+            _scanCts?.Dispose();
+            _scanCts = null;
+            if (ScanState == ScanLifecycleState.Scanning || ScanState == ScanLifecycleState.Cancelling)
+            {
+                RunOnUi(() => TransitionLifecycle(ScanLifecycleState.Idle, StatusText));
+            }
+            else
+            {
+                IsScanning = false;
+                ScanButtonText = "Scan";
+            }
         }
     }
+
+
+
 
     private List<ScanResultRow> BuildMockTargetList()
     {
@@ -281,7 +453,73 @@ public class ScannerViewModel : ObservableObject
             csv.AppendLine($"\"{row.IPAddress}\",\"{row.Hostname}\",\"{row.MACAddress}\",\"{row.Vendor}\",\"{row.OpenPorts}\",\"{row.IPv6Address}\"");
         }
 
-        LogMockAction($"Exported {Results.Count} row(s) to CSV (mock).\nPreview length: {csv.Length} chars.");
+        LogMockAction($"Exported {Results.Count} row(s) to CSV.\nPreview length: {csv.Length} chars.");
+    }
+
+
+    private void TransitionLifecycle(ScanLifecycleState nextState, string? statusText = null)
+    {
+        ScanState = nextState;
+
+        switch (nextState)
+        {
+            case ScanLifecycleState.Scanning:
+                IsScanning = true;
+                ScanButtonText = "Stop";
+                break;
+            case ScanLifecycleState.Cancelling:
+                IsScanning = true;
+                ScanButtonText = "Stopping...";
+                break;
+            default:
+                IsScanning = false;
+                ScanButtonText = "Scan";
+                break;
+        }
+
+        if (!string.IsNullOrWhiteSpace(statusText))
+        {
+            StatusText = statusText;
+        }
+
+        System.Diagnostics.Debug.WriteLine($"[{DateTime.Now:HH:mm:ss}] ScanState -> {nextState} | {StatusText}");
+    }
+
+    private void RunOnUi(Action action)
+    {
+        if (_dispatcherQueue is null || _dispatcherQueue.HasThreadAccess)
+        {
+            action();
+            return;
+        }
+
+        _dispatcherQueue.TryEnqueue(() => action());
+    }
+
+    private void UpdateStatusWithCounts(string? phase = null)
+    {
+        if (!string.IsNullOrWhiteSpace(phase))
+        {
+            _lastBackendStatus = phase;
+        }
+
+        var live = Results.Count(r => !r.IsCached);
+        var cached = Results.Count(r => r.IsCached);
+        var total = Results.Count;
+
+        var prefix = string.IsNullOrWhiteSpace(_lastBackendStatus) ? "Ready" : _lastBackendStatus;
+        StatusText = $"{prefix} | Live: {live} | Cached: {cached} | Total: {total}";
+    }
+
+    private static long IPv4SortKey(string ip)
+    {
+        if (IPAddress.TryParse(ip, out var p) && p.AddressFamily == AddressFamily.InterNetwork)
+        {
+            var b = p.GetAddressBytes();
+            return ((long)b[0] << 24) | ((long)b[1] << 16) | ((long)b[2] << 8) | b[3];
+        }
+
+        return long.MaxValue;
     }
 
     private void ToggleSearchState()
@@ -428,6 +666,113 @@ public class ScannerViewModel : ObservableObject
         });
     }
 
+    private async Task LoadCachedDevicesAsync()
+    {
+        try
+        {
+            var devices = await _dbService.GetAllDevicesAsync();
+
+            RunOnUi(() =>
+            {
+                foreach (var d in devices)
+                {
+                    if (string.IsNullOrWhiteSpace(d.IPAddress))
+                        continue;
+
+                    if (!_resultIPIndex.Add(d.IPAddress))
+                        continue;
+
+                    Results.Add(new ScanResultRow
+                    {
+                        IsOnline = false,
+                        IsCached = true,
+                        CustomName = d.CustomName ?? string.Empty,
+                        FirstSeen = d.FirstSeen.HasValue ? new DateTimeOffset(d.FirstSeen.Value) : null,
+                        LastSeen = d.LastSeen.HasValue ? new DateTimeOffset(d.LastSeen.Value) : null,
+                        IPAddress = d.IPAddress ?? string.Empty,
+                        Hostname = d.Hostname ?? string.Empty,
+                        MACAddress = d.MACAddress ?? string.Empty,
+                        Vendor = d.Vendor ?? string.Empty,
+                        OpenPorts = d.OpenPortsString ?? string.Empty,
+                        IPv6Address = d.IPv6Address ?? string.Empty
+                    });
+                }
+
+                ApplySortColumnHighlights();
+                ApplySearchHighlights();
+                UpdateStatusWithCounts("Ready");
+            });
+        }
+        catch
+        {
+            // non-fatal cache load
+        }
+    }
+
+    private async Task PersistDeviceAsync(ScanResultRow row)
+    {
+        try
+        {
+            var model = new ScanResult
+            {
+                IPAddress = row.IPAddress,
+                Hostname = string.IsNullOrWhiteSpace(row.Hostname) ? null : row.Hostname,
+                MACAddress = string.IsNullOrWhiteSpace(row.MACAddress) ? null : row.MACAddress,
+                Vendor = string.IsNullOrWhiteSpace(row.Vendor) ? null : row.Vendor,
+                IPv6Address = string.IsNullOrWhiteSpace(row.IPv6Address) ? null : row.IPv6Address,
+                OpenPorts = ParseOpenPorts(row.OpenPorts),
+                CustomName = string.IsNullOrWhiteSpace(row.CustomName) ? null : row.CustomName,
+                FirstSeen = row.FirstSeen?.DateTime,
+                LastSeen = row.LastSeen?.DateTime,
+                IsOnline = row.IsOnline,
+                IsCached = row.IsCached,
+                IsResponsive = row.IsOnline,
+                ScanTime = DateTime.Now
+            };
+
+            await _dbService.UpsertDeviceAsync(model);
+        }
+        catch
+        {
+            // non-fatal persistence failure
+        }
+    }
+
+    private static List<int> ParseOpenPorts(string portsText)
+    {
+        if (string.IsNullOrWhiteSpace(portsText))
+            return new List<int>();
+
+        return portsText
+            .Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(x => int.TryParse(x.Trim(), out var p) ? p : -1)
+            .Where(p => p is >= 1 and <= 65535)
+            .Distinct()
+            .OrderBy(p => p)
+            .ToList();
+    }
+
+    private void SetScanUiState(bool isScanning, string? statusText = null)
+    {
+        IsScanning = isScanning;
+        ScanButtonText = isScanning ? "Stop" : "Scan";
+
+        if (!string.IsNullOrWhiteSpace(statusText))
+        {
+            StatusText = statusText;
+        }
+    }
+
+    private void LogScanTransition(string message)
+    {
+        if (_scanStateTransitions.Count >= 100)
+        {
+            _scanStateTransitions.RemoveAt(_scanStateTransitions.Count - 1);
+        }
+
+        _scanStateTransitions.Insert(0, message);
+        MockActionLog = string.Join(Environment.NewLine, _scanStateTransitions.Take(10));
+    }
     private void RefreshStatus()
     {
         var live = Results.Count(r => !r.IsCached);
@@ -466,10 +811,12 @@ public class ScannerViewModel : ObservableObject
         IEnumerable<ScanResultRow> ordered = columnKey switch
         {
             "Hostname" => _sortAscending ? Results.OrderBy(r => r.Hostname) : Results.OrderByDescending(r => r.Hostname),
-            "IPAddress" => _sortAscending ? Results.OrderBy(r => r.IPAddress) : Results.OrderByDescending(r => r.IPAddress),
+            "IPAddress" => _sortAscending ? Results.OrderBy(r => IPv4SortKey(r.IPAddress)).ThenBy(r => r.IPAddress, StringComparer.OrdinalIgnoreCase) : Results.OrderByDescending(r => IPv4SortKey(r.IPAddress)).ThenByDescending(r => r.IPAddress, StringComparer.OrdinalIgnoreCase),
             "MACAddress" => _sortAscending ? Results.OrderBy(r => r.MACAddress) : Results.OrderByDescending(r => r.MACAddress),
             "StateLabel" => _sortAscending ? Results.OrderBy(r => r.StateLabel) : Results.OrderByDescending(r => r.StateLabel),
             "Vendor" => _sortAscending ? Results.OrderBy(r => r.Vendor) : Results.OrderByDescending(r => r.Vendor),
+            "FirstSeen" => _sortAscending ? Results.OrderBy(r => r.FirstSeen) : Results.OrderByDescending(r => r.FirstSeen),
+            "LastSeen" => _sortAscending ? Results.OrderBy(r => r.LastSeen) : Results.OrderByDescending(r => r.LastSeen),
             "OpenPorts" => _sortAscending ? Results.OrderBy(r => r.OpenPorts) : Results.OrderByDescending(r => r.OpenPorts),
             _ => _sortAscending ? Results.OrderBy(r => r.IPAddress) : Results.OrderByDescending(r => r.IPAddress)
         };
@@ -485,4 +832,4 @@ public class ScannerViewModel : ObservableObject
         ApplySearchHighlights();
     }
 }
-
+

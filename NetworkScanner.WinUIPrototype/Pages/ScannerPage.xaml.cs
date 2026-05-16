@@ -23,7 +23,7 @@ public sealed partial class ScannerPage : Page
     private readonly Dictionary<string, Button> _sortHeaderButtons = new();
     private readonly Dictionary<string, FontIcon> _sortHeaderIcons = new();
     private readonly Dictionary<string, Border> _sortHeaderHighlights = new();
-    private readonly double[] _columnWidths = { 170, 130, 170, 90, 170, 130 };
+        private readonly double[] _columnWidths = { 170, 130, 170, 90, 150, 150, 170, 130 };
     private readonly List<ColumnDefinition> _headerColumns = new();
     private ListView _resultsList = null!;
 
@@ -85,7 +85,7 @@ public sealed partial class ScannerPage : Page
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(12),
             Padding = new Thickness(10, 4, 10, 4),
-            Margin = new Thickness(0, 0, 8, 0),
+            Margin = new Thickness(0),
             VerticalAlignment = VerticalAlignment.Center,
             Child = scopeSummary
         };
@@ -342,8 +342,8 @@ public sealed partial class ScannerPage : Page
             BorderBrush = Brush(0xFF, 0x33, 0x36, 0x3D),
             BorderThickness = new Thickness(0, 0, 0, 1),
             CornerRadius = new CornerRadius(6),
-            Padding = new Thickness(8, 8, 8, 8),
-            Margin = new Thickness(6, 0, 6, 6)
+            Padding = new Thickness(0),
+            Margin = new Thickness(6, 0, 6, 0)
         };
 
         var header = new Grid();
@@ -355,17 +355,23 @@ public sealed partial class ScannerPage : Page
         }
 
         AddSortableHeaderCell(header, "Device", "Hostname", 0);
-        AddSortableHeaderCell(header, "IP Address", "IPAddress", 1);
-        AddSortableHeaderCell(header, "MAC Address", "MACAddress", 2);
-        AddSortableHeaderCell(header, "Status", "StateLabel", 3);
-        AddSortableHeaderCell(header, "Manufacturer", "Vendor", 4);
-        AddSortableHeaderCell(header, "Open Ports", "OpenPorts", 5);
-
+                AddSortableHeaderCell(header, "IP Address", "IPAddress", 1);
+                AddSortableHeaderCell(header, "MAC Address", "MACAddress", 2);
+                AddSortableHeaderCell(header, "Status", "StateLabel", 3);
+                AddSortableHeaderCell(header, "First Seen", "FirstSeen", 4);
+                AddSortableHeaderCell(header, "Last Seen", "LastSeen", 5);
+                AddSortableHeaderCell(header, "Manufacturer", "Vendor", 6);
+                AddSortableHeaderCell(header, "Open Ports", "OpenPorts", 7);
+        
+                
         AddColumnResizeGrip(header, 0);
-        AddColumnResizeGrip(header, 1);
-        AddColumnResizeGrip(header, 2);
-        AddColumnResizeGrip(header, 3);
-        AddColumnResizeGrip(header, 4);
+                AddColumnResizeGrip(header, 1);
+                AddColumnResizeGrip(header, 2);
+                AddColumnResizeGrip(header, 3);
+                AddColumnResizeGrip(header, 4);
+                AddColumnResizeGrip(header, 5);
+                AddColumnResizeGrip(header, 6);
+                AddColumnResizeGrip(header, 7);
 
         headerBorder.Child = header;
         Grid.SetRow(headerBorder, 0);
@@ -381,7 +387,10 @@ public sealed partial class ScannerPage : Page
         _resultsList.ContainerContentChanging += OnResultContainerContentChanging;
         _resultsList.SetBinding(ItemsControl.ItemsSourceProperty, new Binding { Path = new PropertyPath("Results") });
         _resultsList.SetBinding(ListView.SelectedItemProperty, new Binding { Path = new PropertyPath("SelectedResult"), Mode = BindingMode.TwoWay });
+        _resultsList.ItemContainerStyle = BuildDarkListViewStyle();
         _resultsList.ItemTemplate = BuildTableRowTemplate();
+        _resultsList.SelectionChanged += (_, _) => RefreshVisibleRowVisuals();
+        _resultsList.Margin = new Thickness(6, 0, 6, 0);
 
         Grid.SetRow(_resultsList, 1);
         tableGrid.Children.Add(_resultsList);
@@ -399,21 +408,11 @@ public sealed partial class ScannerPage : Page
         footer.Background = Brush(0xFF, 0x12, 0x13, 0x16);
         var footerGrid = new Grid();
         footerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        footerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
         var statusText = new TextBlock { VerticalAlignment = VerticalAlignment.Center };
         statusText.SetBinding(TextBlock.TextProperty, new Binding { Path = new PropertyPath("StatusText") });
         Grid.SetColumn(statusText, 0);
         footerGrid.Children.Add(statusText);
-
-        var phase = new TextBlock
-        {
-            Text = "Scanning / Stopped",
-            Opacity = 0.7,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-        Grid.SetColumn(phase, 1);
-        footerGrid.Children.Add(phase);
 
         footer.Child = footerGrid;
         Grid.SetRow(footer, 1);
@@ -444,8 +443,10 @@ public sealed partial class ScannerPage : Page
         style.Setters.Add(new Setter(Control.BackgroundProperty, Brush(0xFF, 0x11, 0x12, 0x14)));
         style.Setters.Add(new Setter(Control.BorderBrushProperty, Brush(0xFF, 0x2A, 0x2A, 0x2F)));
         style.Setters.Add(new Setter(Control.ForegroundProperty, Brush(0xFF, 0xF2, 0xF2, 0xF4)));
-        style.Setters.Add(new Setter(Control.BorderThicknessProperty, new Thickness(1)));
-        style.Setters.Add(new Setter(Control.PaddingProperty, new Thickness(8, 6, 8, 6)));
+        style.Setters.Add(new Setter(Control.BorderThicknessProperty, new Thickness(0)));
+        style.Setters.Add(new Setter(Control.BorderBrushProperty, Brush(0x00, 0x00, 0x00, 0x00)));
+        style.Setters.Add(new Setter(FrameworkElement.MarginProperty, new Thickness(0)));
+        style.Setters.Add(new Setter(Control.PaddingProperty, new Thickness(0)));
         return style;
     }
 
@@ -501,27 +502,42 @@ public sealed partial class ScannerPage : Page
     private static SolidColorBrush Brush(byte a, byte r, byte g, byte b)
         => new(ColorHelper.FromArgb(a, r, g, b));
 
+    private Style BuildDarkListViewStyle()
+    {
+        var style = new Style(typeof(ListViewItem));
+        style.Setters.Add(new Setter(Control.BackgroundProperty, Brush(0x00, 0x00, 0x00, 0x00)));
+        style.Setters.Add(new Setter(Control.BorderBrushProperty, Brush(0x00, 0x00, 0x00, 0x00)));
+        style.Setters.Add(new Setter(Control.BorderThicknessProperty, new Thickness(0)));
+        style.Setters.Add(new Setter(Control.PaddingProperty, new Thickness(0)));
+        style.Setters.Add(new Setter(FrameworkElement.MarginProperty, new Thickness(0)));
+        style.Setters.Add(new Setter(Control.HorizontalContentAlignmentProperty, HorizontalAlignment.Stretch));
+        style.Setters.Add(new Setter(Control.VerticalContentAlignmentProperty, VerticalAlignment.Stretch));
+        return style;
+    }
+
     private void AddSortableHeaderCell(Grid grid, string text, string key, int col)
     {
         var icon = new FontIcon
         {
-            Glyph = "\uE70D", // Sort
+            Glyph = "\uE70D",
             FontSize = 12,
             Foreground = Brush(0xFF, 0x8C, 0x90, 0x98),
-            Margin = new Thickness(6, 0, 0, 0),
+            Margin = new Thickness(4, 0, 0, 0),
             VerticalAlignment = VerticalAlignment.Center
         };
 
         var label = new TextBlock
         {
             Text = text,
-            VerticalAlignment = VerticalAlignment.Center
+            VerticalAlignment = VerticalAlignment.Center,
+            TextTrimming = TextTrimming.CharacterEllipsis
         };
 
         var stack = new StackPanel
         {
             Orientation = Orientation.Horizontal,
-            Spacing = 0
+            Spacing = 0,
+            HorizontalAlignment = HorizontalAlignment.Left
         };
         stack.Children.Add(label);
         stack.Children.Add(icon);
@@ -531,10 +547,11 @@ public sealed partial class ScannerPage : Page
             Content = stack,
             HorizontalAlignment = HorizontalAlignment.Stretch,
             HorizontalContentAlignment = HorizontalAlignment.Left,
-            Padding = new Thickness(4, 2, 4, 2),
+            Padding = new Thickness(2, 0, 10, 0),
             Margin = new Thickness(0),
             Background = Brush(0x00, 0x00, 0x00, 0x00),
             BorderBrush = Brush(0x00, 0x00, 0x00, 0x00),
+            BorderThickness = new Thickness(0),
             Foreground = Brush(0xFF, 0xF2, 0xF2, 0xF4),
             Opacity = 0.95
         };
@@ -547,13 +564,13 @@ public sealed partial class ScannerPage : Page
 
         var highlight = new Border
         {
-            CornerRadius = new CornerRadius(4),
-            Padding = new Thickness(2),
+            CornerRadius = new CornerRadius(3),
+            Padding = new Thickness(0),
             Child = btn,
             Background = Brush(0x00, 0x00, 0x00, 0x00),
             BorderBrush = Brush(0x00, 0x00, 0x00, 0x00),
             BorderThickness = new Thickness(1),
-            Margin = new Thickness(0, 0, 8, 0)
+            Margin = new Thickness(0)
         };
 
         _sortHeaderButtons[key] = btn;
@@ -564,13 +581,14 @@ public sealed partial class ScannerPage : Page
         grid.Children.Add(highlight);
     }
 
+
     private DataTemplate BuildTableRowTemplate()
     {
         var xaml = @"
 <DataTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'
               xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'>
-  <Border BorderBrush='#2A2A2F' BorderThickness='0,0,0,1' Padding='6,6'>
-    <Grid MinWidth='__MINWIDTH__'>
+  <Border BorderBrush='#00000000' BorderThickness='0' Padding='0' Margin='0' Background='Transparent'>
+    <Grid MinWidth='__MINWIDTH__' Margin='0' Padding='0' Background='Transparent'>
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width='__W0__'/>
         <ColumnDefinition Width='__W1__'/>
@@ -578,32 +596,40 @@ public sealed partial class ScannerPage : Page
         <ColumnDefinition Width='__W3__'/>
         <ColumnDefinition Width='__W4__'/>
         <ColumnDefinition Width='__W5__'/>
+        <ColumnDefinition Width='__W6__'/>
+        <ColumnDefinition Width='__W7__'/>
       </Grid.ColumnDefinitions>
 
-      <Border Grid.Column='0' Background='{Binding HostnameCellBrush}' BorderBrush='#1E2A2F36' BorderThickness='0,0,1,0' Padding='2,1'>
+      <Border Grid.Column='0' Background='{Binding HostnameCellBrush}' BorderBrush='#1E2A2F36' BorderThickness='0,0,1,0' Padding='6,0' Margin='0'>
         <TextBlock Tag='Hostname' TextTrimming='CharacterEllipsis' Opacity='0.96'/>
       </Border>
 
-      <Border Grid.Column='1' Background='{Binding IPAddressCellBrush}' BorderBrush='#1E2A2F36' BorderThickness='0,0,1,0' Padding='2,1'>
+      <Border Grid.Column='1' Background='{Binding IPAddressCellBrush}' BorderBrush='#1E2A2F36' BorderThickness='0,0,1,0' Padding='6,0' Margin='0'>
         <TextBlock Tag='IPAddress' TextTrimming='CharacterEllipsis' Opacity='0.94'/>
       </Border>
 
-      <Border Grid.Column='2' Background='{Binding MACAddressCellBrush}' BorderBrush='#1E2A2F36' BorderThickness='0,0,1,0' Padding='2,1'>
+      <Border Grid.Column='2' Background='{Binding MACAddressCellBrush}' BorderBrush='#1E2A2F36' BorderThickness='0,0,1,0' Padding='6,0' Margin='0'>
         <TextBlock Tag='MACAddress' TextTrimming='CharacterEllipsis' Opacity='0.94'/>
       </Border>
 
-      <Border Grid.Column='3' Background='{Binding StatusCellBrush}' BorderBrush='#1E2A2F36' BorderThickness='0,0,1,0' Padding='2,1'>
+      <Border Grid.Column='3' Background='{Binding StatusCellBrush}' BorderBrush='#1E2A2F36' BorderThickness='0,0,1,0' Padding='6,0' Margin='0'>
         <Border Width='12' Height='12' CornerRadius='6' Background='{Binding StateBrush}' VerticalAlignment='Center' HorizontalAlignment='Left' ToolTipService.ToolTip='{Binding StateLabel}'/>
       </Border>
 
-      <Border Grid.Column='4' Background='{Binding VendorCellBrush}' BorderBrush='#1E2A2F36' BorderThickness='0,0,1,0' Padding='2,1'>
+      <Border Grid.Column='4' Background='{Binding FirstSeenCellBrush}' BorderBrush='#1E2A2F36' BorderThickness='0,0,1,0' Padding='6,0' Margin='0'>
+        <TextBlock Tag='FirstSeen' TextTrimming='CharacterEllipsis' Opacity='0.94'/>
+      </Border>
+
+      <Border Grid.Column='5' Background='{Binding LastSeenCellBrush}' BorderBrush='#1E2A2F36' BorderThickness='0,0,1,0' Padding='6,0' Margin='0'>
+        <TextBlock Tag='LastSeen' TextTrimming='CharacterEllipsis' Opacity='0.94'/>
+      </Border>
+
+      <Border Grid.Column='6' Background='{Binding VendorCellBrush}' BorderBrush='#1E2A2F36' BorderThickness='0,0,1,0' Padding='6,0' Margin='0'>
         <TextBlock Tag='Vendor' TextTrimming='CharacterEllipsis' Opacity='0.94'/>
       </Border>
 
-      <Border Grid.Column='5' Background='{Binding OpenPortsCellBrush}' Padding='2,1'>
-        <Border Background='#334A6CF7' CornerRadius='6' Padding='6,2' HorizontalAlignment='Left'>
-          <TextBlock Tag='OpenPorts' TextTrimming='CharacterEllipsis'/>
-        </Border>
+      <Border Grid.Column='7' Background='{Binding OpenPortsCellBrush}' Padding='6,0' Margin='0'>
+        <TextBlock Tag='OpenPorts' TextTrimming='CharacterEllipsis' Opacity='0.94'/>
       </Border>
     </Grid>
   </Border>
@@ -616,10 +642,14 @@ public sealed partial class ScannerPage : Page
             .Replace("__W2__", _columnWidths[2].ToString("F0"))
             .Replace("__W3__", _columnWidths[3].ToString("F0"))
             .Replace("__W4__", _columnWidths[4].ToString("F0"))
-            .Replace("__W5__", _columnWidths[5].ToString("F0"));
+            .Replace("__W5__", _columnWidths[5].ToString("F0"))
+            .Replace("__W6__", _columnWidths[6].ToString("F0"))
+            .Replace("__W7__", _columnWidths[7].ToString("F0"));
 
         return (DataTemplate)Microsoft.UI.Xaml.Markup.XamlReader.Load(xaml);
     }
+
+
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
@@ -644,9 +674,19 @@ public sealed partial class ScannerPage : Page
 
         // Do not apply custom row background highlight here.
         // Current search focus is represented by list selection + text highlight only.
-        rootBorder.Background = Brush(0x00, 0x00, 0x00, 0x00);
-        rootBorder.BorderBrush = Brush(0x00, 0x00, 0x00, 0x00);
-        rootBorder.BorderThickness = new Thickness(0);
+        var rowSelected = ReferenceEquals(row, ViewModel.SelectedResult) || row.IsCurrentSearchHit;
+        if (rowSelected)
+        {
+            rootBorder.Background = Brush(0x66, 0x2E, 0x7D, 0xFF);
+            rootBorder.BorderBrush = Brush(0xFF, 0x2E, 0x7D, 0xFF);
+            rootBorder.BorderThickness = new Thickness(0);
+        }
+        else
+        {
+            rootBorder.Background = Brush(0x00, 0x00, 0x00, 0x00);
+            rootBorder.BorderBrush = Brush(0x00, 0x00, 0x00, 0x00);
+            rootBorder.BorderThickness = new Thickness(0);
+        }
 
         ApplyTextMatchHighlight(rootBorder, row);
     }
@@ -664,12 +704,33 @@ public sealed partial class ScannerPage : Page
                 ?? FindDescendant<Border>(container);
             if (rootBorder is null) continue;
 
-            rootBorder.Background = Brush(0x00, 0x00, 0x00, 0x00);
-            rootBorder.BorderBrush = Brush(0x00, 0x00, 0x00, 0x00);
-            rootBorder.BorderThickness = new Thickness(0);
-
+            ApplyRowChrome(rootBorder, container, row);
             ApplyTextMatchHighlight(rootBorder, row);
         }
+    }
+
+    private void ApplyRowChrome(Border rootBorder, ListViewItem container, ScanResultRow row)
+    {
+        var isSelected = container.IsSelected || ReferenceEquals(row, ViewModel.SelectedResult);
+        if (isSelected)
+        {
+            rootBorder.Background = Brush(0x66, 0x2E, 0x7D, 0xFF);
+            rootBorder.BorderBrush = Brush(0xCC, 0x8C, 0xA8, 0xFF);
+            rootBorder.BorderThickness = new Thickness(0);
+            return;
+        }
+
+        if (row.IsSearchMatch)
+        {
+            rootBorder.Background = Brush(0x22, 0x2E, 0x7D, 0xFF);
+            rootBorder.BorderBrush = Brush(0x44, 0x8C, 0xA8, 0xFF);
+            rootBorder.BorderThickness = new Thickness(0);
+            return;
+        }
+
+        rootBorder.Background = Brush(0x00, 0x00, 0x00, 0x00);
+        rootBorder.BorderBrush = Brush(0x00, 0x00, 0x00, 0x00);
+        rootBorder.BorderThickness = new Thickness(0);
     }
 
     private void ApplyTextMatchHighlight(FrameworkElement root, ScanResultRow row)
@@ -681,8 +742,10 @@ public sealed partial class ScannerPage : Page
         HighlightTextByTag(root, "Hostname", row.Hostname, query, isMatch, isCurrent);
         HighlightTextByTag(root, "IPAddress", row.IPAddress, query, isMatch, isCurrent);
         HighlightTextByTag(root, "MACAddress", row.MACAddress, query, isMatch, isCurrent);
+        HighlightTextByTag(root, "FirstSeen", row.FirstSeen?.ToString("yyyy-MM-dd HH:mm") ?? string.Empty, query, isMatch, isCurrent);
+        HighlightTextByTag(root, "LastSeen", row.LastSeen?.ToString("yyyy-MM-dd HH:mm") ?? string.Empty, query, isMatch, isCurrent);
         HighlightTextByTag(root, "Vendor", row.Vendor, query, isMatch, isCurrent);
-        HighlightTextByTag(root, "OpenPorts", row.OpenPorts, query, isMatch, isCurrent);
+        HighlightTextByTag(root, "OpenPorts", row.OpenPorts ?? string.Empty, query, isMatch, isCurrent);
     }
 
     private void HighlightTextByTag(FrameworkElement root, string tag, string fullText, string? query, bool isMatch, bool strong)
@@ -896,39 +959,57 @@ public sealed partial class ScannerPage : Page
 
     private void AddColumnResizeGrip(Grid header, int leftColumnIndex)
     {
-        var grip = new Border
-        {
-            Width = 10,
-            Background = Brush(0x00, 0x00, 0x00, 0x00),
-            HorizontalAlignment = HorizontalAlignment.Right,
-            Margin = new Thickness(0, -2, -4, -2)
-        };
+        var lastColumn = header.ColumnDefinitions.Count - 1;
+        var isLastEdge = leftColumnIndex >= lastColumn;
+
+        // For interior separators, host in the next column and align left.
+        // For the final right edge, host in last column and align right.
+        var hostColumn = isLastEdge ? lastColumn : Math.Min(leftColumnIndex + 1, lastColumn);
 
         var line = new Border
         {
             Width = 1,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            Background = Brush(0x2E, 0x77, 0x7D, 0x88)
+            VerticalAlignment = VerticalAlignment.Stretch,
+            HorizontalAlignment = isLastEdge ? HorizontalAlignment.Right : HorizontalAlignment.Left,
+            Margin = isLastEdge ? new Thickness(0, 0, -1, 0) : new Thickness(-1, 0, 0, 0),
+            Background = Brush(0x88, 0x8D, 0x96, 0xA4),
+            IsHitTestVisible = false
         };
-        grip.Child = line;
 
-        Grid.SetColumn(grip, leftColumnIndex);
+        var grip = new Grid
+        {
+            Width = 14,
+            VerticalAlignment = VerticalAlignment.Stretch,
+            HorizontalAlignment = isLastEdge ? HorizontalAlignment.Right : HorizontalAlignment.Left,
+            Margin = isLastEdge ? new Thickness(7, -2, -7, -2) : new Thickness(-7, -2, -7, -2),
+            Background = Brush(0x00, 0x00, 0x00, 0x00),
+            IsHitTestVisible = true
+        };
+
+        grip.Children.Add(line);
+        Grid.SetColumn(grip, hostColumn);
         header.Children.Add(grip);
 
-        grip.PointerEntered += (_, _) => line.Background = Brush(0x88, 0x4A, 0x8D, 0xF7);
-        grip.PointerExited += (_, _) =>
+        grip.PointerEntered += (_, _) =>
         {
-            if (!_isResizingColumn) line.Background = Brush(0x2E, 0x77, 0x7D, 0x88);
+            if (!_isResizingColumn)
+                line.Background = Brush(0xDD, 0xA6, 0xB4, 0xFF);
         };
 
-        grip.PointerPressed += (_, e) =>
+        grip.PointerExited += (_, _) =>
+        {
+            if (!_isResizingColumn)
+                line.Background = Brush(0x88, 0x8D, 0x96, 0xA4);
+        };
+
+        grip.PointerPressed += (sender, e) =>
         {
             _isResizingColumn = true;
             _resizingColumnIndex = leftColumnIndex;
             _resizeStartX = e.GetCurrentPoint(header).Position.X;
             _resizeStartWidth = _columnWidths[leftColumnIndex];
-            line.Background = Brush(0xCC, 0x4A, 0x8D, 0xF7);
-            grip.CapturePointer(e.Pointer);
+            line.Background = Brush(0xFF, 0xB8, 0xC4, 0xFF);
+            ((UIElement)sender).CapturePointer(e.Pointer);
             e.Handled = true;
         };
 
@@ -942,27 +1023,44 @@ public sealed partial class ScannerPage : Page
             _columnWidths[leftColumnIndex] = newWidth;
 
             if (leftColumnIndex < _headerColumns.Count)
-            {
                 _headerColumns[leftColumnIndex].Width = new GridLength(newWidth);
-            }
 
+            ApplyColumnWidthsToVisibleRows();
             e.Handled = true;
         };
 
-        grip.PointerReleased += (_, e) =>
+        grip.PointerReleased += (sender, e) =>
         {
             _isResizingColumn = false;
             _resizingColumnIndex = -1;
-            line.Background = Brush(0x2E, 0x77, 0x7D, 0x88);
-            grip.ReleasePointerCapture(e.Pointer);
-
-            if (_resultsList is not null)
-            {
-                _resultsList.ItemTemplate = BuildTableRowTemplate();
-                _resultsList.UpdateLayout();
-            }
-
+            line.Background = Brush(0x88, 0x8D, 0x96, 0xA4);
+            ((UIElement)sender).ReleasePointerCapture(e.Pointer);
             e.Handled = true;
         };
     }
-}
+
+
+
+
+
+
+    private void ApplyColumnWidthsToVisibleRows()
+    {
+        if (_resultsList is null) return;
+
+        foreach (var item in _resultsList.Items)
+        {
+            if (_resultsList.ContainerFromItem(item) is not ListViewItem container) continue;
+            if (container.ContentTemplateRoot is not FrameworkElement root) continue;
+
+            var rowGrid = FindDescendant<Grid>(root);
+            if (rowGrid is null) continue;
+            if (rowGrid.ColumnDefinitions.Count < _columnWidths.Length) continue;
+
+            for (var i = 0; i < _columnWidths.Length; i++)
+            {
+                rowGrid.ColumnDefinitions[i].Width = new GridLength(_columnWidths[i]);
+            }
+        }
+    }
+}

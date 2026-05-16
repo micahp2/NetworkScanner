@@ -59,5 +59,5 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\run_regression.ps1
    - `MainWindow.xaml` (`VersionText`)
    - `NetworkScanner.csproj` (`Version`, `FileVersion`, `AssemblyVersion`)
 
-Current version after this checkpoint: **v1.0.1**
+Current version after this checkpoint: **v1.0.5**
 

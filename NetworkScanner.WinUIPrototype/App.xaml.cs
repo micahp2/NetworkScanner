@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -23,12 +24,26 @@ public partial class App : Application
     {
         try
         {
-            _window = new MainWindow();
+            WriteCrashLog("OnLaunched.Start", new Exception("Launching app"));
+
+            var navDiag = Environment.GetEnvironmentVariable("NS_NAV_DIAG");
+            if (string.Equals(navDiag, "1", StringComparison.OrdinalIgnoreCase))
+            {
+                _window = new NavDiagWindow();
+                WriteCrashLog("OnLaunched.NavDiagWindowCreated", new Exception("NavDiagWindow created"));
+            }
+            else
+            {
+                _window = new MainWindow();
+                WriteCrashLog("OnLaunched.MainWindowCreated", new Exception("MainWindow created"));
+            }
+
             _window.Activate();
+            WriteCrashLog("OnLaunched.Activated", new Exception("Window activated"));
         }
         catch (Exception ex)
         {
-            WriteCrashLog("OnLaunched", ex);
+            WriteCrashLog("OnLaunched.Exception", ex);
 
             // Final fallback so startup errors are visible instead of silent exit.
             var fallback = new Window
@@ -56,16 +71,36 @@ public partial class App : Application
 
     private static void WriteCrashLog(string stage, Exception ex)
     {
+        var message = $"[{DateTime.Now:O}] {stage}\n{ex}\n\n";
+
         try
         {
-            var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NetworkScanner.WinUIPrototype");
-            Directory.CreateDirectory(dir);
-            var path = Path.Combine(dir, "startup-crash.log");
-            File.AppendAllText(path, $"[{DateTime.Now:O}] {stage}\n{ex}\n\n");
+            var localDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NetworkScanner.WinUIPrototype");
+            Directory.CreateDirectory(localDir);
+            File.AppendAllText(Path.Combine(localDir, "startup-crash.log"), message);
         }
         catch
         {
-            // ignore log failures
+            // ignore local log failures
+        }
+
+        try
+        {
+            var exeDir = AppContext.BaseDirectory;
+            File.AppendAllText(Path.Combine(exeDir, "startup-crash.log"), message);
+        }
+        catch
+        {
+            // ignore exe-dir log failures
+        }
+
+        try
+        {
+            Debug.WriteLine(message);
+        }
+        catch
+        {
+            // ignore debug output failures
         }
     }
 }
