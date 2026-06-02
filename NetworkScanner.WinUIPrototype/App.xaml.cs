@@ -9,6 +9,20 @@ namespace NetworkScanner.WinUIPrototype;
 
 public partial class App : Application
 {
+    // ── Sounds ───────────────────────────────────────────────────────────────
+    [System.Runtime.InteropServices.DllImport("winmm.dll", SetLastError = true)]
+    private static extern bool PlaySound(string? pszSound, IntPtr hmod, uint fdwSound);
+
+    private const uint SND_ALIAS     = 0x00010000;
+    private const uint SND_ASYNC     = 0x00000001;
+    private const uint SND_NODEFAULT = 0x00000002;
+
+    public static void PlayScanComplete() =>
+        PlaySound("Notification.Default", IntPtr.Zero, SND_ALIAS | SND_ASYNC | SND_NODEFAULT);
+
+    public static void PlayScanStopped() =>
+        PlaySound("SystemHand", IntPtr.Zero, SND_ALIAS | SND_ASYNC | SND_NODEFAULT);
+
     private Window? _window;
 
     public ScannerViewModel ScannerViewModel { get; } = new();

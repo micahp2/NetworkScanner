@@ -14,12 +14,22 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <EnableMsixTooling>true</EnableMsixTooling>
+    <ApplicationIcon>Assets\app_icon.ico</ApplicationIcon>
+    <Version>1.0.9</Version>
+    <AssemblyVersion>1.0.9.0</AssemblyVersion>
+    <FileVersion>1.0.9.0</FileVersion>
   
     <AppxMSBuildToolsPath Condition="'$(AppxMSBuildToolsPath)' == '' and Exists('C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\MSBuild\\Microsoft\\VisualStudio\\v17.0\\AppxPackage\\Microsoft.Build.Packaging.Pri.Tasks.dll')">C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\MSBuild\\Microsoft\\VisualStudio\\v17.0\\AppxPackage\\</AppxMSBuildToolsPath>
     <AppxMSBuildToolsPath Condition="'$(AppxMSBuildToolsPath)' == '' and Exists('C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Microsoft\\VisualStudio\\v17.0\\AppxPackage\\Microsoft.Build.Packaging.Pri.Tasks.dll')">C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Microsoft\\VisualStudio\\v17.0\\AppxPackage\\</AppxMSBuildToolsPath>
     <AppxMSBuildToolsPath Condition="'$(AppxMSBuildToolsPath)' == '' and Exists('C:\\Program Files\\Microsoft Visual Studio\\2022\\Professional\\MSBuild\\Microsoft\\VisualStudio\\v17.0\\AppxPackage\\Microsoft.Build.Packaging.Pri.Tasks.dll')">C:\\Program Files\\Microsoft Visual Studio\\2022\\Professional\\MSBuild\\Microsoft\\VisualStudio\\v17.0\\AppxPackage\\</AppxMSBuildToolsPath>
     <AppxMSBuildToolsPath Condition="'$(AppxMSBuildToolsPath)' == '' and Exists('C:\\Program Files\\Microsoft Visual Studio\\2022\\Enterprise\\MSBuild\\Microsoft\\VisualStudio\\v17.0\\AppxPackage\\Microsoft.Build.Packaging.Pri.Tasks.dll')">C:\\Program Files\\Microsoft Visual Studio\\2022\\Enterprise\\MSBuild\\Microsoft\\VisualStudio\\v17.0\\AppxPackage\\</AppxMSBuildToolsPath>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="Assets\app_icon.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
 
   <ItemGroup>
     <Compile Remove="Program.cs" />
@@ -33,6 +43,7 @@
     <PackageReference Include="System.Net.Ping" Version="4.3.0" />
     <PackageReference Include="System.Net.NetworkInformation" Version="4.3.0" />
   </ItemGroup>
+
   <ItemGroup>
     <Compile Include="..\models\ScanOptions.cs" Link="Core\Models\ScanOptions.cs" />
     <Compile Include="..\models\ScanResult.cs" Link="Core\Models\ScanResult.cs" />

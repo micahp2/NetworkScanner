@@ -1,5 +1,7 @@
 using System.ComponentModel;
+using System.IO;
 using System.Linq;
+using System.Text.Json;
 using Microsoft.UI;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
@@ -7,6 +9,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Documents;
+using Microsoft.UI.Xaml.Input;
 using Windows.Foundation;
 using NetworkScanner.WinUIPrototype.ViewModels;
 using NetworkScanner.WinUIPrototype.Models;
@@ -23,11 +26,34 @@ public sealed partial class ScannerPage : Page
     private readonly Dictionary<string, Button> _sortHeaderButtons = new();
     private readonly Dictionary<string, FontIcon> _sortHeaderIcons = new();
     private readonly Dictionary<string, Border> _sortHeaderHighlights = new();
-        private readonly double[] _columnWidths = { 170, 130, 170, 90, 150, 150, 170, 130, 150, 220 };
+    private readonly double[] _columnWidths = { 170, 130, 170, 90, 150, 150, 170, 130, 150, 220 };
     private readonly List<ColumnDefinition> _headerColumns = new();
     private ListView _resultsList = null!;
     private TextBlock _scopeSummary = null!;
     private Grid _tableGrid = null!;
+    private Grid _headerGrid = null!;
+
+    private readonly List<string> _columnOrder = new()
+    {
+        "Hostname", "IPAddress", "MACAddress", "StateLabel", "FirstSeen", "LastSeen", "Vendor", "OpenPorts", "CustomName", "IPv6Address"
+    };
+
+    private bool _isDraggingColumn;
+    private string? _draggingColumnKey;
+    private Point _pointerPressStartPos;
+    private readonly TranslateTransform _dragTranslation = new();
+
+    private readonly string _columnLayoutPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "NetworkScanner",
+        "column-layout-winui.json"
+    );
+
+    private sealed class WinUIColumnLayoutItem
+    {
+        public string Key { get; set; } = "";
+        public double Width { get; set; }
+    }
 
     private bool _isResizingColumn;
     private int _resizingColumnIndex = -1;
@@ -36,6 +62,7 @@ public sealed partial class ScannerPage : Page
 
     public ScannerPage()
     {
+        LoadColumnLayoutOrDefault();
         ViewModel = ((App)Application.Current).ScannerViewModel;
         DataContext = ViewModel;
 
@@ -170,6 +197,47 @@ public sealed partial class ScannerPage : Page
         };
         showCachedSwitch.SetBinding(ToggleSwitch.IsOnProperty, new Binding { Path = new PropertyPath("ShowCached"), Mode = BindingMode.TwoWay });
 
+        var periodicScanSwitch = new ToggleSwitch
+        {
+            Header = "Periodic Rescan",
+            Margin = new Thickness(0, 4, 0, 0),
+            Foreground = Brush(0xFF, 0xF2, 0xF2, 0xF4)
+        };
+        periodicScanSwitch.SetBinding(ToggleSwitch.IsOnProperty, new Binding { Path = new PropertyPath("PeriodicScanEnabled"), Mode = BindingMode.TwoWay });
+
+        var periodicIntervalLabel = new TextBlock { Text = "Interval", Opacity = 0.85, Margin = new Thickness(0, 4, 0, 2) };
+        var periodicIntervalBox = new ComboBox
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Background = Brush(0xFF, 0x11, 0x12, 0x14),
+            Foreground = Brush(0xFF, 0xF2, 0xF2, 0xF4),
+            RequestedTheme = ElementTheme.Dark,
+            Margin = new Thickness(0, 0, 0, 4)
+        };
+        periodicIntervalBox.Resources["ComboBoxBackground"] = Brush(0xFF, 0x11, 0x12, 0x14);
+        periodicIntervalBox.Resources["ComboBoxBackgroundPointerOver"] = Brush(0xFF, 0x16, 0x18, 0x1D);
+        periodicIntervalBox.Resources["ComboBoxBackgroundFocused"] = Brush(0xFF, 0x16, 0x18, 0x1D);
+        periodicIntervalBox.Resources["ComboBoxForeground"] = Brush(0xFF, 0xF2, 0xF2, 0xF4);
+        periodicIntervalBox.Resources["ComboBoxForegroundFocused"] = Brush(0xFF, 0xF2, 0xF2, 0xF4);
+        periodicIntervalBox.Resources["ComboBoxBorderBrush"] = Brush(0xFF, 0x2A, 0x2A, 0x2F);
+        periodicIntervalBox.Resources["ComboBoxBorderBrushFocused"] = Brush(0xFF, 0x4A, 0x8D, 0xF7);
+
+        periodicIntervalBox.Items.Add(new ComboBoxItem { Content = "1 min", Tag = 1 });
+        periodicIntervalBox.Items.Add(new ComboBoxItem { Content = "5 min", Tag = 5 });
+        periodicIntervalBox.Items.Add(new ComboBoxItem { Content = "10 min", Tag = 10 });
+        periodicIntervalBox.Items.Add(new ComboBoxItem { Content = "30 min", Tag = 30 });
+        periodicIntervalBox.Items.Add(new ComboBoxItem { Content = "60 min", Tag = 60 });
+        
+        periodicIntervalBox.SelectedIndex = 1;
+        periodicIntervalBox.SetBinding(Control.IsEnabledProperty, new Binding { Path = new PropertyPath("PeriodicScanEnabled") });
+        periodicIntervalBox.SelectionChanged += (s, e) =>
+        {
+            if (periodicIntervalBox.SelectedItem is ComboBoxItem item && item.Tag is int mins)
+            {
+                ViewModel.PeriodicScanIntervalMinutes = mins;
+            }
+        };
+
         var scopeHint = new TextBlock
         {
             Text = "Tip: Scope values drive this prototype's mock scan behavior.",
@@ -195,6 +263,8 @@ public sealed partial class ScannerPage : Page
             scanIPv6Switch.IsOn = false;
             showOfflineSwitch.IsOn = true;
             showCachedSwitch.IsOn = true;
+            periodicScanSwitch.IsOn = false;
+            periodicIntervalBox.SelectedIndex = 1;
             RefreshScopeSummaryText();
         };
 
@@ -205,6 +275,11 @@ public sealed partial class ScannerPage : Page
             if (scopeBtn.Flyout is Flyout f)
             {
                 f.Hide();
+            }
+
+            if (ViewModel.PeriodicScanEnabled && !ViewModel.IsScanning && ViewModel.ScanState == ScanLifecycleState.Idle)
+            {
+                ViewModel.StartStopScanCommand.Execute(null);
             }
         };
 
@@ -220,6 +295,9 @@ public sealed partial class ScannerPage : Page
         scopeFlyoutPanel.Children.Add(scanIPv6Switch);
         scopeFlyoutPanel.Children.Add(showOfflineSwitch);
         scopeFlyoutPanel.Children.Add(showCachedSwitch);
+        scopeFlyoutPanel.Children.Add(periodicScanSwitch);
+        scopeFlyoutPanel.Children.Add(periodicIntervalLabel);
+        scopeFlyoutPanel.Children.Add(periodicIntervalBox);
         scopeFlyoutPanel.Children.Add(scopeHint);
         scopeFlyoutPanel.Children.Add(scopeActions);
 
@@ -389,6 +467,7 @@ public sealed partial class ScannerPage : Page
         };
 
         var header = new Grid();
+        _headerGrid = header;
         for (var i = 0; i < _columnWidths.Length; i++)
         {
             var colDef = new ColumnDefinition { Width = new GridLength(_columnWidths[i]) };
@@ -396,16 +475,16 @@ public sealed partial class ScannerPage : Page
             _headerColumns.Add(colDef);
         }
 
-        AddSortableHeaderCell(header, "Device", "Hostname", 0);
-        AddSortableHeaderCell(header, "IP Address", "IPAddress", 1);
-        AddSortableHeaderCell(header, "MAC Address", "MACAddress", 2);
-        AddSortableHeaderCell(header, "Status", "StateLabel", 3);
-        AddSortableHeaderCell(header, "First Seen", "FirstSeen", 4);
-        AddSortableHeaderCell(header, "Last Seen", "LastSeen", 5);
-        AddSortableHeaderCell(header, "Manufacturer", "Vendor", 6);
-        AddSortableHeaderCell(header, "Open Ports", "OpenPorts", 7);
-        AddSortableHeaderCell(header, "Custom Name", "CustomName", 8);
-        AddSortableHeaderCell(header, "IPv6 Address", "IPv6Address", 9);
+        AddSortableHeaderCell(header, "Device", "Hostname", _columnOrder.IndexOf("Hostname"));
+        AddSortableHeaderCell(header, "IP Address", "IPAddress", _columnOrder.IndexOf("IPAddress"));
+        AddSortableHeaderCell(header, "MAC Address", "MACAddress", _columnOrder.IndexOf("MACAddress"));
+        AddSortableHeaderCell(header, "Status", "StateLabel", _columnOrder.IndexOf("StateLabel"));
+        AddSortableHeaderCell(header, "First Seen", "FirstSeen", _columnOrder.IndexOf("FirstSeen"));
+        AddSortableHeaderCell(header, "Last Seen", "LastSeen", _columnOrder.IndexOf("LastSeen"));
+        AddSortableHeaderCell(header, "Manufacturer", "Vendor", _columnOrder.IndexOf("Vendor"));
+        AddSortableHeaderCell(header, "Open Ports", "OpenPorts", _columnOrder.IndexOf("OpenPorts"));
+        AddSortableHeaderCell(header, "Custom Name", "CustomName", _columnOrder.IndexOf("CustomName"));
+        AddSortableHeaderCell(header, "IPv6 Address", "IPv6Address", _columnOrder.IndexOf("IPv6Address"));
         
         AddColumnResizeGrip(header, 0);
         AddColumnResizeGrip(header, 1);
@@ -635,6 +714,11 @@ public sealed partial class ScannerPage : Page
             Margin = new Thickness(0)
         };
 
+        highlight.AddHandler(UIElement.PointerPressedEvent, new PointerEventHandler(Header_PointerPressed), true);
+        highlight.AddHandler(UIElement.PointerMovedEvent, new PointerEventHandler(Header_PointerMoved), true);
+        highlight.AddHandler(UIElement.PointerReleasedEvent, new PointerEventHandler(Header_PointerReleased), true);
+        highlight.AddHandler(UIElement.PointerCaptureLostEvent, new PointerEventHandler(Header_PointerCaptureLost), true);
+
         _sortHeaderButtons[key] = btn;
         _sortHeaderIcons[key] = icon;
         _sortHeaderHighlights[key] = highlight;
@@ -646,81 +730,87 @@ public sealed partial class ScannerPage : Page
 
     private DataTemplate BuildTableRowTemplate()
     {
-        var xaml = @"
-<DataTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'
-              xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'>
-  <Border BorderBrush='#00000000' BorderThickness='0' Padding='0' Margin='0' Background='Transparent'>
-    <Grid MinWidth='__MINWIDTH__' Margin='0' Padding='0' Background='Transparent'>
-      <Grid.ColumnDefinitions>
-        <ColumnDefinition Width='__W0__'/>
-        <ColumnDefinition Width='__W1__'/>
-        <ColumnDefinition Width='__W2__'/>
-        <ColumnDefinition Width='__W3__'/>
-        <ColumnDefinition Width='__W4__'/>
-        <ColumnDefinition Width='__W5__'/>
-        <ColumnDefinition Width='__W6__'/>
-        <ColumnDefinition Width='__W7__'/>
-        <ColumnDefinition Width='__W8__'/>
-        <ColumnDefinition Width='__W9__'/>
-      </Grid.ColumnDefinitions>
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("<DataTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'>");
+        sb.AppendLine("  <Border BorderBrush='#00000000' BorderThickness='0' Padding='0' Margin='0' Background='Transparent'>");
+        
+        var minWidth = _columnWidths.Sum() + 80;
+        sb.AppendLine($"    <Grid MinWidth='{minWidth:F0}' Margin='0' Padding='0' Background='Transparent'>");
+        
+        sb.AppendLine("      <Grid.ColumnDefinitions>");
+        for (int i = 0; i < _columnOrder.Count; i++)
+        {
+            sb.AppendLine($"        <ColumnDefinition Width='{_columnWidths[i]:F0}'/>");
+        }
+        sb.AppendLine("      </Grid.ColumnDefinitions>");
 
-      <Border Grid.Column='0' Background='{Binding HostnameCellBrush}' BorderBrush='#1E2A2F36' BorderThickness='0,0,1,0' Padding='6,0' Margin='0'>
-        <TextBlock Tag='Hostname' TextTrimming='CharacterEllipsis' Opacity='0.96'/>
-      </Border>
+        for (int i = 0; i < _columnOrder.Count; i++)
+        {
+            var key = _columnOrder[i];
+            var isLast = (i == _columnOrder.Count - 1);
+            var thickness = isLast ? "0" : "0,0,1,0";
+            var borderBrush = isLast ? "#00000000" : "#1E2A2F36";
+            
+            switch (key)
+            {
+                case "Hostname":
+                    sb.AppendLine($"      <Border Grid.Column='{i}' Tag='Hostname' Background='{{Binding HostnameCellBrush}}' BorderBrush='{borderBrush}' BorderThickness='{thickness}' Padding='6,0' Margin='0'>");
+                    sb.AppendLine("        <TextBlock Tag='Hostname' TextTrimming='CharacterEllipsis' Opacity='0.96'/>");
+                    sb.AppendLine("      </Border>");
+                    break;
+                case "IPAddress":
+                    sb.AppendLine($"      <Border Grid.Column='{i}' Tag='IPAddress' Background='{{Binding IPAddressCellBrush}}' BorderBrush='{borderBrush}' BorderThickness='{thickness}' Padding='6,0' Margin='0'>");
+                    sb.AppendLine("        <TextBlock Tag='IPAddress' TextTrimming='CharacterEllipsis' Opacity='0.94'/>");
+                    sb.AppendLine("      </Border>");
+                    break;
+                case "MACAddress":
+                    sb.AppendLine($"      <Border Grid.Column='{i}' Tag='MACAddress' Background='{{Binding MACAddressCellBrush}}' BorderBrush='{borderBrush}' BorderThickness='{thickness}' Padding='6,0' Margin='0'>");
+                    sb.AppendLine("        <TextBlock Tag='MACAddress' TextTrimming='CharacterEllipsis' Opacity='0.94'/>");
+                    sb.AppendLine("      </Border>");
+                    break;
+                case "StateLabel":
+                    sb.AppendLine($"      <Border Grid.Column='{i}' Tag='StateLabel' Background='{{Binding StatusCellBrush}}' BorderBrush='{borderBrush}' BorderThickness='{thickness}' Padding='6,0' Margin='0'>");
+                    sb.AppendLine("        <Border Width='12' Height='12' CornerRadius='6' Background='{Binding StateBrush}' VerticalAlignment='Center' HorizontalAlignment='Left' ToolTipService.ToolTip='{Binding StateLabel}'/>");
+                    sb.AppendLine("      </Border>");
+                    break;
+                case "FirstSeen":
+                    sb.AppendLine($"      <Border Grid.Column='{i}' Tag='FirstSeen' Background='{{Binding FirstSeenCellBrush}}' BorderBrush='{borderBrush}' BorderThickness='{thickness}' Padding='6,0' Margin='0'>");
+                    sb.AppendLine("        <TextBlock Tag='FirstSeen' TextTrimming='CharacterEllipsis' Opacity='0.94'/>");
+                    sb.AppendLine("      </Border>");
+                    break;
+                case "LastSeen":
+                    sb.AppendLine($"      <Border Grid.Column='{i}' Tag='LastSeen' Background='{{Binding LastSeenCellBrush}}' BorderBrush='{borderBrush}' BorderThickness='{thickness}' Padding='6,0' Margin='0'>");
+                    sb.AppendLine("        <TextBlock Tag='LastSeen' TextTrimming='CharacterEllipsis' Opacity='0.94'/>");
+                    sb.AppendLine("      </Border>");
+                    break;
+                case "Vendor":
+                    sb.AppendLine($"      <Border Grid.Column='{i}' Tag='Vendor' Background='{{Binding VendorCellBrush}}' BorderBrush='{borderBrush}' BorderThickness='{thickness}' Padding='6,0' Margin='0'>");
+                    sb.AppendLine("        <TextBlock Tag='Vendor' TextTrimming='CharacterEllipsis' Opacity='0.94'/>");
+                    sb.AppendLine("      </Border>");
+                    break;
+                case "OpenPorts":
+                    sb.AppendLine($"      <Border Grid.Column='{i}' Tag='OpenPorts' Background='{{Binding OpenPortsCellBrush}}' BorderBrush='{borderBrush}' BorderThickness='{thickness}' Padding='6,0' Margin='0'>");
+                    sb.AppendLine("        <TextBlock Tag='OpenPorts' TextTrimming='CharacterEllipsis' Opacity='0.94'/>");
+                    sb.AppendLine("      </Border>");
+                    break;
+                case "CustomName":
+                    sb.AppendLine($"      <Border Grid.Column='{i}' Tag='CustomName' Background='{{Binding CustomNameCellBrush}}' BorderBrush='{borderBrush}' BorderThickness='{thickness}' Padding='6,0' Margin='0'>");
+                    sb.AppendLine("        <TextBlock Tag='CustomName' TextTrimming='CharacterEllipsis' Opacity='0.94'/>");
+                    sb.AppendLine("      </Border>");
+                    break;
+                case "IPv6Address":
+                    sb.AppendLine($"      <Border Grid.Column='{i}' Tag='IPv6Address' Background='{{Binding IPv6AddressCellBrush}}' BorderBrush='{borderBrush}' BorderThickness='{thickness}' Padding='6,0' Margin='0'>");
+                    sb.AppendLine("        <TextBlock Tag='IPv6Address' TextTrimming='CharacterEllipsis' Opacity='0.94'/>");
+                    sb.AppendLine("      </Border>");
+                    break;
+            }
+        }
 
-      <Border Grid.Column='1' Background='{Binding IPAddressCellBrush}' BorderBrush='#1E2A2F36' BorderThickness='0,0,1,0' Padding='6,0' Margin='0'>
-        <TextBlock Tag='IPAddress' TextTrimming='CharacterEllipsis' Opacity='0.94'/>
-      </Border>
+        sb.AppendLine("    </Grid>");
+        sb.AppendLine("  </Border>");
+        sb.AppendLine("</DataTemplate>");
 
-      <Border Grid.Column='2' Background='{Binding MACAddressCellBrush}' BorderBrush='#1E2A2F36' BorderThickness='0,0,1,0' Padding='6,0' Margin='0'>
-        <TextBlock Tag='MACAddress' TextTrimming='CharacterEllipsis' Opacity='0.94'/>
-      </Border>
-
-      <Border Grid.Column='3' Background='{Binding StatusCellBrush}' BorderBrush='#1E2A2F36' BorderThickness='0,0,1,0' Padding='6,0' Margin='0'>
-        <Border Width='12' Height='12' CornerRadius='6' Background='{Binding StateBrush}' VerticalAlignment='Center' HorizontalAlignment='Left' ToolTipService.ToolTip='{Binding StateLabel}'/>
-      </Border>
-
-      <Border Grid.Column='4' Background='{Binding FirstSeenCellBrush}' BorderBrush='#1E2A2F36' BorderThickness='0,0,1,0' Padding='6,0' Margin='0'>
-        <TextBlock Tag='FirstSeen' TextTrimming='CharacterEllipsis' Opacity='0.94'/>
-      </Border>
-
-      <Border Grid.Column='5' Background='{Binding LastSeenCellBrush}' BorderBrush='#1E2A2F36' BorderThickness='0,0,1,0' Padding='6,0' Margin='0'>
-        <TextBlock Tag='LastSeen' TextTrimming='CharacterEllipsis' Opacity='0.94'/>
-      </Border>
-
-      <Border Grid.Column='6' Background='{Binding VendorCellBrush}' BorderBrush='#1E2A2F36' BorderThickness='0,0,1,0' Padding='6,0' Margin='0'>
-        <TextBlock Tag='Vendor' TextTrimming='CharacterEllipsis' Opacity='0.94'/>
-      </Border>
-
-      <Border Grid.Column='7' Background='{Binding OpenPortsCellBrush}' BorderBrush='#1E2A2F36' BorderThickness='0,0,1,0' Padding='6,0' Margin='0'>
-        <TextBlock Tag='OpenPorts' TextTrimming='CharacterEllipsis' Opacity='0.94'/>
-      </Border>
-
-      <Border Grid.Column='8' Background='{Binding CustomNameCellBrush}' BorderBrush='#1E2A2F36' BorderThickness='0,0,1,0' Padding='6,0' Margin='0'>
-        <TextBlock Tag='CustomName' TextTrimming='CharacterEllipsis' Opacity='0.94'/>
-      </Border>
-
-      <Border Grid.Column='9' Background='{Binding IPv6AddressCellBrush}' Padding='6,0' Margin='0'>
-        <TextBlock Tag='IPv6Address' TextTrimming='CharacterEllipsis' Opacity='0.94'/>
-      </Border>
-    </Grid>
-  </Border>
-</DataTemplate>";
-
-        xaml = xaml
-            .Replace("__MINWIDTH__", (_columnWidths.Sum() + 80).ToString("F0"))
-            .Replace("__W0__", _columnWidths[0].ToString("F0"))
-            .Replace("__W1__", _columnWidths[1].ToString("F0"))
-            .Replace("__W2__", _columnWidths[2].ToString("F0"))
-            .Replace("__W3__", _columnWidths[3].ToString("F0"))
-            .Replace("__W4__", _columnWidths[4].ToString("F0"))
-            .Replace("__W5__", _columnWidths[5].ToString("F0"))
-            .Replace("__W6__", _columnWidths[6].ToString("F0"))
-            .Replace("__W7__", _columnWidths[7].ToString("F0"))
-            .Replace("__W8__", _columnWidths[8].ToString("F0"))
-            .Replace("__W9__", _columnWidths[9].ToString("F0"));
-
-        return (DataTemplate)Microsoft.UI.Xaml.Markup.XamlReader.Load(xaml);
+        return (DataTemplate)Microsoft.UI.Xaml.Markup.XamlReader.Load(sb.ToString());
     }
 
 
@@ -1012,11 +1102,21 @@ public sealed partial class ScannerPage : Page
             var icon = _sortHeaderIcons[key];
             var highlight = _sortHeaderHighlights[key];
 
-            if (string.Equals(ViewModel.CurrentSortColumn, key, StringComparison.OrdinalIgnoreCase))
+            if (_isDraggingColumn && string.Equals(key, _draggingColumnKey, StringComparison.OrdinalIgnoreCase))
+            {
+                icon.Glyph = "\uE70D";
+                icon.Foreground = Brush(0xFF, 0x8C, 0x90, 0x98);
+                button.Opacity = 1.0;
+                highlight.Opacity = 0.6;
+                highlight.Background = Brush(0x80, 0x4A, 0x8D, 0xF7);
+                highlight.BorderBrush = Brush(0xFF, 0x4A, 0x8D, 0xF7);
+            }
+            else if (string.Equals(ViewModel.CurrentSortColumn, key, StringComparison.OrdinalIgnoreCase))
             {
                 icon.Glyph = ViewModel.IsSortAscending ? "\uE70E" : "\uE70D"; // up/down sort glyphs
                 icon.Foreground = Brush(0xFF, 0x4A, 0x8D, 0xF7);
                 button.Opacity = 1.0;
+                highlight.Opacity = 1.0;
 
                 highlight.Background = Brush(0x33, 0x4A, 0x8D, 0xF7);
                 highlight.BorderBrush = Brush(0x66, 0x4A, 0x8D, 0xF7);
@@ -1026,6 +1126,7 @@ public sealed partial class ScannerPage : Page
                 icon.Glyph = "\uE70D"; // neutral sort
                 icon.Foreground = Brush(0xFF, 0x8C, 0x90, 0x98);
                 button.Opacity = 0.9;
+                highlight.Opacity = 1.0;
 
                 highlight.Background = Brush(0x00, 0x00, 0x00, 0x00);
                 highlight.BorderBrush = Brush(0x00, 0x00, 0x00, 0x00);
@@ -1080,26 +1181,34 @@ public sealed partial class ScannerPage : Page
 
         grip.PointerPressed += (sender, e) =>
         {
+            var g = (Grid)sender;
+            var isLast = g.HorizontalAlignment == HorizontalAlignment.Right;
+            var colIndex = isLast ? Grid.GetColumn(g) : Grid.GetColumn(g) - 1;
+
             _isResizingColumn = true;
-            _resizingColumnIndex = leftColumnIndex;
+            _resizingColumnIndex = colIndex;
             _resizeStartX = e.GetCurrentPoint(header).Position.X;
-            _resizeStartWidth = _columnWidths[leftColumnIndex];
+            _resizeStartWidth = _columnWidths[colIndex];
             line.Background = Brush(0xFF, 0xB8, 0xC4, 0xFF);
-            ((UIElement)sender).CapturePointer(e.Pointer);
+            g.CapturePointer(e.Pointer);
             e.Handled = true;
         };
 
-        grip.PointerMoved += (_, e) =>
+        grip.PointerMoved += (sender, e) =>
         {
-            if (!_isResizingColumn || _resizingColumnIndex != leftColumnIndex) return;
+            if (!_isResizingColumn) return;
+            var g = (Grid)sender;
+            var isLast = g.HorizontalAlignment == HorizontalAlignment.Right;
+            var colIndex = isLast ? Grid.GetColumn(g) : Grid.GetColumn(g) - 1;
+            if (_resizingColumnIndex != colIndex) return;
 
             var currentX = e.GetCurrentPoint(header).Position.X;
             var delta = currentX - _resizeStartX;
             var newWidth = Math.Max(80, _resizeStartWidth + delta);
-            _columnWidths[leftColumnIndex] = newWidth;
+            _columnWidths[colIndex] = newWidth;
 
-            if (leftColumnIndex < _headerColumns.Count)
-                _headerColumns[leftColumnIndex].Width = new GridLength(newWidth);
+            if (colIndex < _headerColumns.Count)
+                _headerColumns[colIndex].Width = new GridLength(newWidth);
 
             ApplyColumnWidthsToVisibleRows();
             e.Handled = true;
@@ -1111,6 +1220,14 @@ public sealed partial class ScannerPage : Page
             _resizingColumnIndex = -1;
             line.Background = Brush(0x88, 0x8D, 0x96, 0xA4);
             ((UIElement)sender).ReleasePointerCapture(e.Pointer);
+            
+            if (_resultsList is not null)
+            {
+                _resultsList.ItemTemplate = BuildTableRowTemplate();
+            }
+
+            SaveColumnLayout();
+
             e.Handled = true;
         };
     }
@@ -1142,6 +1259,266 @@ public sealed partial class ScannerPage : Page
             {
                 rowGrid.ColumnDefinitions[i].Width = new GridLength(_columnWidths[i]);
             }
+
+            foreach (var child in rowGrid.Children)
+            {
+                if (child is Border cellBorder && cellBorder.Tag is string cellTag)
+                {
+                    var newIndex = _columnOrder.IndexOf(cellTag);
+                    if (newIndex >= 0)
+                    {
+                        Grid.SetColumn(cellBorder, newIndex);
+                        if (newIndex == _columnOrder.Count - 1)
+                        {
+                            cellBorder.BorderThickness = new Thickness(0);
+                        }
+                        else
+                        {
+                            cellBorder.BorderThickness = new Thickness(0, 0, 1, 0);
+                            cellBorder.BorderBrush = Brush(0x1E, 0x2A, 0x2F, 0x36);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private void Header_PointerPressed(object sender, PointerRoutedEventArgs e)
+    {
+        var highlight = (Border)sender;
+        var key = _sortHeaderHighlights.FirstOrDefault(x => ReferenceEquals(x.Value, highlight)).Key;
+        if (string.IsNullOrEmpty(key)) return;
+
+        _pointerPressStartPos = e.GetCurrentPoint(_headerGrid).Position;
+        _draggingColumnKey = key;
+        _isDraggingColumn = false;
+    }
+
+    private void Header_PointerMoved(object sender, PointerRoutedEventArgs e)
+    {
+        if (string.IsNullOrEmpty(_draggingColumnKey)) return;
+
+        var highlight = (Border)sender;
+        var currentPoint = e.GetCurrentPoint(_headerGrid);
+        var currentX = currentPoint.Position.X;
+
+        if (!_isDraggingColumn)
+        {
+            var pressPoint = _pointerPressStartPos;
+            var deltaX = Math.Abs(currentPoint.Position.X - pressPoint.X);
+            var deltaY = Math.Abs(currentPoint.Position.Y - pressPoint.Y);
+
+            // Drag threshold of 8 pixels
+            if (deltaX > 8)
+            {
+                _isDraggingColumn = true;
+                highlight.CapturePointer(e.Pointer);
+                
+                // Initialize translation and set high ZIndex so it draws above other headers
+                _dragTranslation.X = 0;
+                highlight.RenderTransform = _dragTranslation;
+                Canvas.SetZIndex(highlight, 99);
+
+                // Immediately apply styling for dragging
+                UpdateSortHeaderIndicators();
+            }
+        }
+        else
+        {
+            _dragTranslation.X = currentX - _pointerPressStartPos.X;
+
+            var curIndex = _columnOrder.IndexOf(_draggingColumnKey);
+            if (curIndex >= 0)
+            {
+                // Left check
+                if (curIndex > 0)
+                {
+                    var leftMidpoint = GetColumnLeft(curIndex - 1) + _columnWidths[curIndex - 1] / 2;
+                    if (currentX < leftMidpoint)
+                    {
+                        SwapColumns(curIndex, curIndex - 1);
+                    }
+                }
+                // Right check
+                if (curIndex < _columnOrder.Count - 1)
+                {
+                    var rightMidpoint = GetColumnLeft(curIndex + 1) + _columnWidths[curIndex + 1] / 2;
+                    if (currentX > rightMidpoint)
+                    {
+                        SwapColumns(curIndex, curIndex + 1);
+                    }
+                }
+            }
+            e.Handled = true;
+        }
+    }
+
+    private void Header_PointerReleased(object sender, PointerRoutedEventArgs e)
+    {
+        if (string.IsNullOrEmpty(_draggingColumnKey)) return;
+
+        var highlight = (Border)sender;
+        if (_isDraggingColumn)
+        {
+            highlight.ReleasePointerCapture(e.Pointer);
+            _isDraggingColumn = false;
+            _draggingColumnKey = null;
+            
+            // Clear transform and restore normal Z-Index
+            highlight.RenderTransform = null;
+            Canvas.SetZIndex(highlight, 0);
+
+            // Apply layout, rebuild template, and save configuration
+            ApplyColumnOrderAndWidths(updateTemplate: true);
+            UpdateSortHeaderIndicators();
+            SaveColumnLayout();
+
+            e.Handled = true;
+        }
+        else
+        {
+            _draggingColumnKey = null;
+        }
+    }
+
+    private void Header_PointerCaptureLost(object sender, PointerRoutedEventArgs e)
+    {
+        var highlight = (Border)sender;
+        _isDraggingColumn = false;
+        _draggingColumnKey = null;
+        
+        highlight.RenderTransform = null;
+        Canvas.SetZIndex(highlight, 0);
+
+        ApplyColumnOrderAndWidths(updateTemplate: true);
+        UpdateSortHeaderIndicators();
+        SaveColumnLayout();
+    }
+
+    private void SwapColumns(int index1, int index2)
+    {
+        var tempKey = _columnOrder[index1];
+        _columnOrder[index1] = _columnOrder[index2];
+        _columnOrder[index2] = tempKey;
+
+        var tempWidth = _columnWidths[index1];
+        _columnWidths[index1] = _columnWidths[index2];
+        _columnWidths[index2] = tempWidth;
+
+        // Shift drag pointer origin to align visual translation seamlessly
+        if (index2 > index1)
+        {
+            _pointerPressStartPos.X += _columnWidths[index1];
+        }
+        else
+        {
+            _pointerPressStartPos.X -= _columnWidths[index2];
+        }
+
+        // Apply new order to the grid and visible items (don't update template during drag)
+        ApplyColumnOrderAndWidths(updateTemplate: false);
+        UpdateSortHeaderIndicators();
+    }
+
+    private double GetColumnLeft(int index)
+    {
+        double left = 0;
+        for (int i = 0; i < index && i < _columnWidths.Length; i++)
+        {
+            left += _columnWidths[i];
+        }
+        return left;
+    }
+
+    private void ApplyColumnOrderAndWidths(bool updateTemplate = false)
+    {
+        // 1. Update header column definitions widths
+        for (var i = 0; i < _columnWidths.Length; i++)
+        {
+            if (i < _headerColumns.Count)
+            {
+                _headerColumns[i].Width = new GridLength(_columnWidths[i]);
+            }
+        }
+
+        // 2. Update table grid width
+        if (_tableGrid is not null)
+        {
+            _tableGrid.Width = _columnWidths.Sum() + 12;
+        }
+
+        // 3. Update header highlight positions (Grid.SetColumn)
+        for (var i = 0; i < _columnOrder.Count; i++)
+        {
+            var key = _columnOrder[i];
+            if (_sortHeaderHighlights.TryGetValue(key, out var highlight))
+            {
+                Grid.SetColumn(highlight, i);
+            }
+        }
+
+        // 4. Update the ListView's ItemTemplate so any future row containers are built with correct columns
+        if (updateTemplate && _resultsList is not null)
+        {
+            _resultsList.ItemTemplate = BuildTableRowTemplate();
+        }
+
+        // 5. Update visible row containers in the ListView
+        ApplyColumnWidthsToVisibleRows();
+    }
+
+    private void SaveColumnLayout()
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(_columnLayoutPath)!);
+
+            var items = new List<WinUIColumnLayoutItem>();
+            for (int i = 0; i < _columnOrder.Count; i++)
+            {
+                items.Add(new WinUIColumnLayoutItem
+                {
+                    Key = _columnOrder[i],
+                    Width = _columnWidths[i]
+                });
+            }
+
+            var json = JsonSerializer.Serialize(items, new JsonSerializerOptions { WriteIndented = true });
+            File.WriteAllText(_columnLayoutPath, json);
+        }
+        catch
+        {
+            // non-fatal
+        }
+    }
+
+    private void LoadColumnLayoutOrDefault()
+    {
+        try
+        {
+            if (File.Exists(_columnLayoutPath))
+            {
+                var json = File.ReadAllText(_columnLayoutPath);
+                var items = JsonSerializer.Deserialize<List<WinUIColumnLayoutItem>>(json);
+                if (items != null && items.Count == _columnOrder.Count)
+                {
+                    var allValid = items.All(i => _columnOrder.Contains(i.Key));
+                    if (allValid)
+                    {
+                        _columnOrder.Clear();
+                        for (int i = 0; i < items.Count; i++)
+                        {
+                            _columnOrder.Add(items[i].Key);
+                            _columnWidths[i] = items[i].Width;
+                        }
+                        return;
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // fallback
         }
     }
 }

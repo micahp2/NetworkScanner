@@ -545,6 +545,19 @@ public sealed partial class MainWindow : Window
         var hwnd = WindowNative.GetWindowHandle(this);
         var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd);
         _appWindow = AppWindow.GetFromWindowId(windowId);
+
+        try
+        {
+            var iconPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "app_icon.ico");
+            if (File.Exists(iconPath))
+            {
+                _appWindow?.SetIcon(iconPath);
+            }
+        }
+        catch
+        {
+            // non-fatal
+        }
     }
 
     private void MainWindow_Activated(object sender, WindowActivatedEventArgs args)

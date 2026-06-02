@@ -210,6 +210,21 @@ NetworkScanner/
 
 ## Changelog
 
+### v1.0.9
+
+- **Column Drag-to-Reorder & Persistence (WinUI)**:
+  - Added smooth drag-and-drop column reordering to the WinUI prototype table.
+  - Implemented high-fidelity drag previews using `TranslateTransform` and `Canvas.SetZIndex` overlay to let the dragged header slide smoothly under the mouse.
+  - Applied mathematical visual alignment offset adjustments to eliminate visual column jumping during column swaps.
+  - Added JSON layout persistence (`column-layout-winui.json` in `LocalApplicationData`), saving column order and custom widths instantly upon reordering or resizing and restoring them on app startup.
+- **Application Icons (WPF & WinUI)**:
+  - Created a modern, high-contrast flat-vector application icon showing a glowing neon cyan/blue/green gradient network scanner ring and node system.
+  - Built an automated PowerShell utility [convert_icon.ps1](file:///c:/Users/Micah/OneDrive/Documents/GitHub/NetworkScanner/_scratch/convert_icon.ps1) using GDI+ color key attributes to strip the black background and generate a clean, transparent-background `.ico` file.
+  - Configured project properties to embed the icon in both WPF and WinUI compiled executables.
+  - Linked window icons at runtime via XAML in WPF and programmatically using native `AppWindow.SetIcon` in WinUI.
+- **Release Production Packages**:
+  - Upgraded both projects to version 1.0.9 and compiled standalone Release builds.
+
 ### v1.0.8
 
 - **WinUI Parity & Native Title Bar**:

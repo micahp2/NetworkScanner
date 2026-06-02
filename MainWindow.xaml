@@ -5,7 +5,8 @@
         Title="Network Scanner" Height="700" Width="1100" MinHeight="500" MinWidth="800"
         WindowStartupLocation="CenterScreen"
         Foreground="{DynamicResource TextBrush}"
-        Background="{DynamicResource PanelBrush}">
+        Background="{DynamicResource PanelBrush}"
+        Icon="Assets/app_icon.ico">
     <Grid Background="{DynamicResource PanelBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />   <!-- toolbar -->
@@ -69,26 +70,53 @@
                     </TextBox>
                 </StackPanel>
 
-                <!-- Scan IPv6 CheckBox -->
-                <StackPanel VerticalAlignment="Bottom" Margin="0,0,12,4">
-                    <CheckBox x:Name="ScanIPv6Check" Content="IPv6" FontSize="11" IsChecked="False"
-                              Foreground="{DynamicResource TextBrush}"
-                              ToolTip="Enable IPv6 address scanning and auto-discovery of IPv6 neighbors." />
-                </StackPanel>
-
-                <!-- Filter Offline CheckBox -->
-                <StackPanel VerticalAlignment="Bottom" Margin="0,0,12,4">
-                    <CheckBox x:Name="ShowOfflineCheck" Content="Offline" FontSize="11" IsChecked="True"
-                              Foreground="{DynamicResource TextBrush}" Click="FilterCheckBox_Click"
-                              ToolTip="Show/hide offline devices in the results." />
-                </StackPanel>
-
-                <!-- Filter Cached CheckBox -->
-                <StackPanel VerticalAlignment="Bottom" Margin="0,0,12,4">
-                    <CheckBox x:Name="ShowCachedCheck" Content="Cached" FontSize="11" IsChecked="True"
-                              Foreground="{DynamicResource TextBrush}" Click="FilterCheckBox_Click"
-                              ToolTip="Show/hide cached offline devices in the results." />
-                </StackPanel>
+                <!-- Options Button + Popup -->
+                <Button x:Name="OptionsButton" Content="Options" Width="60" Height="24"
+                        FontSize="11" Click="OptionsButton_Click" VerticalAlignment="Bottom"
+                        Margin="0,0,12,0" ToolTip="Configure scan and view options" />
+                <Popup x:Name="OptionsPopup"
+                       PlacementTarget="{Binding ElementName=OptionsButton}"
+                       Placement="Bottom"
+                       StaysOpen="True"
+                       AllowsTransparency="True">
+                    <Border Background="{DynamicResource BackgroundBrush}"
+                            BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="1"
+                            Padding="12"
+                            CornerRadius="4">
+                        <Border.Effect>
+                            <DropShadowEffect BlurRadius="8" Opacity="0.25"
+                                              ShadowDepth="2" Direction="270" />
+                        </Border.Effect>
+                        <StackPanel>
+                            <CheckBox x:Name="ScanIPv6Check" Content="Scan IPv6" FontSize="11" IsChecked="False"
+                                      Foreground="{DynamicResource TextBrush}" Margin="0,0,0,6"
+                                      ToolTip="Enable IPv6 address scanning and auto-discovery of IPv6 neighbors." />
+                            <CheckBox x:Name="ShowOfflineCheck" Content="Show Offline Devices" FontSize="11" IsChecked="True"
+                                      Foreground="{DynamicResource TextBrush}" Click="FilterCheckBox_Click" Margin="0,0,0,6"
+                                      ToolTip="Show/hide offline devices in the results." />
+                            <CheckBox x:Name="ShowCachedCheck" Content="Show Cached Devices" FontSize="11" IsChecked="True"
+                                      Foreground="{DynamicResource TextBrush}" Click="FilterCheckBox_Click" Margin="0,0,0,8"
+                                      ToolTip="Show/hide cached offline devices in the results." />
+                            <Separator Background="{DynamicResource BorderBrush}" Margin="0,0,0,8"/>
+                            <CheckBox x:Name="PeriodicScanCheck" Content="Periodic Rescan" FontSize="11" IsChecked="False"
+                                      Foreground="{DynamicResource TextBrush}" Checked="PeriodicScanCheck_Changed" Unchecked="PeriodicScanCheck_Changed" Margin="0,0,0,6"
+                                      ToolTip="Enable periodic automatic rescanning." />
+                            <StackPanel Orientation="Horizontal" Margin="20,0,0,0">
+                                <TextBlock Text="Every " FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource TextBrush}" />
+                                <ComboBox x:Name="PeriodicIntervalCombo" Width="75" Height="22" FontSize="11"
+                                          VerticalContentAlignment="Center" SelectedIndex="1"
+                                          IsEnabled="{Binding IsChecked, ElementName=PeriodicScanCheck}">
+                                    <ComboBoxItem Content="1 min" Tag="1" />
+                                    <ComboBoxItem Content="5 min" Tag="5" />
+                                    <ComboBoxItem Content="10 min" Tag="10" />
+                                    <ComboBoxItem Content="30 min" Tag="30" />
+                                    <ComboBoxItem Content="60 min" Tag="60" />
+                                </ComboBox>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </Popup>
 
                 <!-- Scan / Clear / Export -->
                 <Button x:Name="StartButton" Content="Scan" Width="76" Height="24"

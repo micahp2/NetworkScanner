@@ -41,6 +41,10 @@ public sealed partial class SettingsPage : Page
         panel.Children.Add(MakeTextSetting("Ping Timeout (ms)", "PingTimeoutMs"));
         panel.Children.Add(MakeTextSetting("Port Timeout (ms)", "PortTimeoutMs"));
 
+        panel.Children.Add(new TextBlock { Text = "Periodic Scan", FontSize = 18, Margin = new Thickness(0, 8, 0, 0) });
+        panel.Children.Add(MakeCheck("Enable Periodic Rescan", "PeriodicScanEnabled"));
+        panel.Children.Add(MakeTextSetting("Interval (minutes)", "PeriodicScanIntervalMinutes"));
+
         panel.Children.Add(new TextBlock { Text = "Appearance", FontSize = 18, Margin = new Thickness(0, 8, 0, 0) });
         panel.Children.Add(MakeTextSetting("Theme", "AppThemeMode"));
 

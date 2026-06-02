@@ -30,6 +30,9 @@ public partial class MainWindow : Window
     private string _searchTerm = "";
     private readonly string _columnLayoutPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NetworkScanner", "column-layout.json");
 
+    // Periodic scan state
+    private CancellationTokenSource? _periodicCts;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -49,7 +52,7 @@ public partial class MainWindow : Window
 
         Loaded += (_, _) => LoadColumnLayoutOrDefault();
         Closing += (_, _) => SaveColumnLayout();
-        Deactivated += (_, _) => { FindPopup.IsOpen = false; };
+        Deactivated += (_, _) => { FindPopup.IsOpen = false; OptionsPopup.IsOpen = false; };
 
         _ = LoadCachedDevicesAsync();
 
@@ -63,20 +66,36 @@ public partial class MainWindow : Window
         ResultsGrid.ContextMenuOpening += ResultsGrid_ContextMenuOpening;
         ResultsGrid.ContextMenu = new ContextMenu(); // placeholder — rebuilt on open
 
-        // Close the find popup when the user clicks anywhere outside it.
-        // We use PreviewMouseDown on the Window (tunnels before any element
-        // handles it) so the click still reaches the DataGrid normally —
-        // no mouse capture, no scroll blocking.
+        // Close the find and options popups when the user clicks anywhere outside them.
         PreviewMouseDown += (_, e) =>
         {
-            if (!FindPopup.IsOpen) return;
-            // Hit-test: is the click inside the popup's visual tree?
-            if (FindPopup.Child is Visual popupRoot &&
-                e.OriginalSource is DependencyObject src &&
-                popupRoot.IsAncestorOf(src))
-                return; // click was inside — keep popup open
-            // Click was outside — close it
-            FindPopup.IsOpen = false;
+            if (FindPopup.IsOpen)
+            {
+                if (FindPopup.Child is Visual popupRoot &&
+                    e.OriginalSource is DependencyObject src &&
+                    popupRoot.IsAncestorOf(src))
+                {
+                    // inside
+                }
+                else
+                {
+                    FindPopup.IsOpen = false;
+                }
+            }
+
+            if (OptionsPopup.IsOpen)
+            {
+                if (OptionsPopup.Child is Visual popupRoot2 &&
+                    e.OriginalSource is DependencyObject src2 &&
+                    popupRoot2.IsAncestorOf(src2))
+                {
+                    // inside
+                }
+                else
+                {
+                    OptionsPopup.IsOpen = false;
+                }
+            }
         };
 
         // Pre-fill ports only if blank
@@ -386,16 +405,33 @@ public partial class MainWindow : Window
         menu.IsOpen = true;
     }
 
+    private void OptionsButton_Click(object sender, RoutedEventArgs e)
+    {
+        OptionsPopup.IsOpen = !OptionsPopup.IsOpen;
+    }
+
     private void StartButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_scannerService.IsScanning)
+        if (_scannerService.IsScanning || _periodicCts != null)
         {
             _scannerService.StopScan();
             StartButton.Content   = "Scan";
             StartButton.IsEnabled = true;
             App.PlayScanStopped();
+
+            _periodicCts?.Cancel();
+            _periodicCts = null;
+            RefreshStatusCounts();
             return;
         }
+
+        StartScan();
+    }
+
+    private void StartScan()
+    {
+        _periodicCts?.Cancel();
+        _periodicCts = null;
 
         // Split on commas AND newlines so users can enter multiple ranges either way:
         //   "192.168.2.0/24, 192.168.4.0/24"  (comma-separated on one line)
@@ -570,9 +606,72 @@ public partial class MainWindow : Window
         int live = _results.Count(r => !r.IsCached);
         int cached = _results.Count(r => r.IsCached);
         int total = _results.Count;
-        UpdateStatus($"Scan complete | Live: {live} | Cached: {cached} | Total: {total}");
 
         App.PlayScanComplete();
+
+        if (PeriodicScanCheck.IsChecked == true)
+        {
+            StartButton.Content = "Stop";
+            _ = StartPeriodicCountdownAsync();
+        }
+        else
+        {
+            UpdateStatus($"Scan complete | Live: {live} | Cached: {cached} | Total: {total}");
+        }
+    }
+
+    private async Task StartPeriodicCountdownAsync()
+    {
+        _periodicCts?.Cancel();
+        _periodicCts = new CancellationTokenSource();
+        var token = _periodicCts.Token;
+
+        try
+        {
+            int intervalMin = 5;
+            if (PeriodicIntervalCombo.SelectedItem is ComboBoxItem item && int.TryParse(item.Tag?.ToString(), out int val))
+            {
+                intervalMin = val;
+            }
+
+            int remainingSeconds = intervalMin * 60;
+            while (remainingSeconds > 0)
+            {
+                token.ThrowIfCancellationRequested();
+
+                int minutes = remainingSeconds / 60;
+                int seconds = remainingSeconds % 60;
+
+                int live = _results.Count(r => !r.IsCached);
+                int cached = _results.Count(r => r.IsCached);
+                UpdateStatus($"Next scan in {minutes:D2}:{seconds:D2} | Live: {live} | Cached: {cached} | Total: {_results.Count}");
+
+                await Task.Delay(1000, token);
+                remainingSeconds--;
+            }
+
+            token.ThrowIfCancellationRequested();
+            StartScan();
+        }
+        catch (OperationCanceledException)
+        {
+            // Count cancelled
+        }
+    }
+
+    private void PeriodicScanCheck_Changed(object sender, RoutedEventArgs e)
+    {
+        if (PeriodicScanCheck.IsChecked != true)
+        {
+            _periodicCts?.Cancel();
+            _periodicCts = null;
+            StartButton.Content = "Scan";
+            RefreshStatusCounts();
+        }
+        else if (!_scannerService.IsScanning && _periodicCts == null)
+        {
+            StartScan();
+        }
     }
 
     // ── Context menu ──────────────────────────────────────────────────────────

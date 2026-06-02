@@ -219,6 +219,28 @@ public class ScannerViewModel : ObservableObject
     public int PingTimeoutMs { get; set; } = 3000;
     public int PortTimeoutMs { get; set; } = 1500;
 
+    private bool _periodicScanEnabled;
+    private int _periodicScanIntervalMinutes = 5;
+    private CancellationTokenSource? _periodicCts;
+
+    public bool PeriodicScanEnabled
+    {
+        get => _periodicScanEnabled;
+        set
+        {
+            if (SetProperty(ref _periodicScanEnabled, value))
+            {
+                OnPeriodicScanEnabledChanged();
+            }
+        }
+    }
+
+    public int PeriodicScanIntervalMinutes
+    {
+        get => _periodicScanIntervalMinutes;
+        set => SetProperty(ref _periodicScanIntervalMinutes, value);
+    }
+
     public int CurrentSearchIndex { get; private set; } = -1;
     public int SearchNavigationVersion { get; private set; }
 
@@ -338,12 +360,27 @@ public class ScannerViewModel : ObservableObject
             return;
         }
 
-        if (ScanState == ScanLifecycleState.Scanning || IsScanning)
+        if (ScanState == ScanLifecycleState.Scanning || IsScanning || _periodicCts != null)
         {
             TransitionLifecycle(ScanLifecycleState.Cancelling, "Stopping scan...");
+            
+            bool wasCountingDown = _periodicCts != null;
+
             _scanCts?.Cancel();
+            _periodicCts?.Cancel();
+            _periodicCts = null;
+            TransitionLifecycle(ScanLifecycleState.Idle, "Ready");
+
+            if (wasCountingDown)
+            {
+                App.PlayScanStopped();
+            }
+
             return;
         }
+
+        _periodicCts?.Cancel();
+        _periodicCts = null;
 
         _scanCts?.Dispose();
         _scanCts = new CancellationTokenSource();
@@ -422,7 +459,17 @@ public class ScannerViewModel : ObservableObject
                 ApplySortColumnHighlights();
                 ApplySearchHighlights();
                 TransitionLifecycle(ScanLifecycleState.Completed, $"Scan complete - {Results.Count} active host(s)");
-                UpdateStatusWithCounts($"Scan complete - {Results.Count} active host(s)");
+
+                App.PlayScanComplete();
+                
+                if (PeriodicScanEnabled)
+                {
+                    _ = StartPeriodicCountdownAsync();
+                }
+                else
+                {
+                    UpdateStatusWithCounts($"Scan complete - {Results.Count} active host(s)");
+                }
             });
 
             LogMockAction($"Scan completed via {_backend.Name} backend.");
@@ -433,6 +480,7 @@ public class ScannerViewModel : ObservableObject
             {
                 TransitionLifecycle(ScanLifecycleState.Cancelled, "Scan cancelled.");
                 UpdateStatusWithCounts("Scan cancelled");
+                App.PlayScanStopped();
             });
         }
         catch (Exception ex)
@@ -441,6 +489,7 @@ public class ScannerViewModel : ObservableObject
             {
                 TransitionLifecycle(ScanLifecycleState.Faulted, $"Scan failed: {ex.Message}");
                 UpdateStatusWithCounts($"Error: {ex.Message}");
+                App.PlayScanStopped();
             });
         }
         finally
@@ -454,8 +503,69 @@ public class ScannerViewModel : ObservableObject
             else
             {
                 IsScanning = false;
-                ScanButtonText = "Scan";
+                ScanButtonText = PeriodicScanEnabled && _periodicCts != null ? "Stop" : "Scan";
             }
+        }
+    }
+
+    private async Task StartPeriodicCountdownAsync()
+    {
+        _periodicCts?.Cancel();
+        _periodicCts = new CancellationTokenSource();
+        var token = _periodicCts.Token;
+
+        try
+        {
+            RunOnUi(() =>
+            {
+                ScanButtonText = "Stop";
+            });
+
+            int remainingSeconds = _periodicScanIntervalMinutes * 60;
+            while (remainingSeconds > 0)
+            {
+                token.ThrowIfCancellationRequested();
+
+                int minutes = remainingSeconds / 60;
+                int seconds = remainingSeconds % 60;
+
+                RunOnUi(() =>
+                {
+                    var live = Results.Count(r => !r.IsCached);
+                    var cached = Results.Count(r => r.IsCached);
+                    var total = Results.Count;
+                    StatusText = $"Next scan in {minutes:D2}:{seconds:D2} | Live: {live} | Cached: {cached} | Total: {total}";
+                });
+
+                await Task.Delay(1000, token);
+                remainingSeconds--;
+            }
+
+            token.ThrowIfCancellationRequested();
+
+            RunOnUi(async () =>
+            {
+                _periodicCts = null;
+                await StartStopScanAsync();
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            RunOnUi(() =>
+            {
+                ScanButtonText = "Scan";
+            });
+        }
+    }
+
+    private void OnPeriodicScanEnabledChanged()
+    {
+        if (!_periodicScanEnabled)
+        {
+            _periodicCts?.Cancel();
+            _periodicCts = null;
+            ScanButtonText = "Scan";
+            UpdateStatusWithCounts();
         }
     }
 
@@ -527,7 +637,7 @@ public class ScannerViewModel : ObservableObject
                 break;
             default:
                 IsScanning = false;
-                ScanButtonText = "Scan";
+                ScanButtonText = PeriodicScanEnabled && _periodicCts != null ? "Stop" : "Scan";
                 break;
         }
 
