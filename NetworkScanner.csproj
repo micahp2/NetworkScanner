@@ -8,16 +8,24 @@
     <Nullable>enable</Nullable>
     <RootNamespace>NetworkScanner</RootNamespace>
     <AssemblyName>NetworkScanner</AssemblyName>
-    <Version>1.0.6</Version>
-    <AssemblyVersion>1.0.6.0</AssemblyVersion>
+    <Version>1.0.8</Version>
+    <AssemblyVersion>1.0.8.0</AssemblyVersion>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
     <NoWarn>NETSDK1137</NoWarn>
-    <FileVersion>1.0.6.0</FileVersion>
+    <FileVersion>1.0.8.0</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>
     <Compile Remove="DiagnosticDump\**" />
+    <Compile Remove="NetworkScanner.WinUIPrototype\**\*.cs" />
+    <Page Remove="NetworkScanner.WinUIPrototype\**\*.xaml" />
+    <None Remove="NetworkScanner.WinUIPrototype\**\*" />
+    <EmbeddedResource Remove="NetworkScanner.WinUIPrototype\**\*" />
+    <Compile Remove="_scratch\**\*.cs" />
+    <Page Remove="_scratch\**\*.xaml" />
+    <None Remove="_scratch\**\*" />
+    <EmbeddedResource Remove="_scratch\**\*" />
   </ItemGroup>
 
   <ItemGroup>

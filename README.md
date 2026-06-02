@@ -116,6 +116,32 @@ dotnet publish -c Release -r win-x64 --self-contained false
 
 ---
 
+### WinUI 3 prototype (local compatibility mode)
+
+The repository includes `NetworkScanner.WinUIPrototype`, a WinUI 3 prototype project.
+
+On some environments, runtime XAML parsing may fail even when the project compiles. For local stability on this machine, the prototype shell/pages are built in code-behind and published self-contained.
+
+```powershell
+$repo = "C:\Users\mstro\OneDrive\Documents\GitHub\NetworkScanner"
+$proj = "$repo\NetworkScanner.WinUIPrototype\NetworkScanner.WinUIPrototype.csproj"
+$out  = "C:\Temp\NetworkScannerWinUI"
+
+Get-Process NetworkScanner.WinUIPrototype -ErrorAction SilentlyContinue | Stop-Process -Force
+
+dotnet publish $proj -c Release -r win-x64 `
+  /p:SelfContained=true `
+  /p:WindowsAppSDKSelfContained=true `
+  /p:WindowsPackageType=None `
+  -o $out
+
+& "$out\NetworkScanner.WinUIPrototype.exe"
+```
+
+See also:
+- `docs/WINUI_PROTOTYPE_LOCAL_STABILITY_NOTES.md`
+- `docs/WINUI_PROTOTYPE_UI_HANDOFF.md`
+
 ## Architecture
 
 ```

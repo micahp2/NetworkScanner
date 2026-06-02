@@ -8,9 +8,15 @@ public class ScanResult : INotifyPropertyChanged
 {
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    private void Set<T>(ref T field, T value, [CallerMemberName] string? name = null)
+    private bool Set<T>(ref T field, T value, [CallerMemberName] string? name = null)
     {
-        if (!Equals(field, value)) { field = value; PropertyChanged?.Invoke(this, new(name)); }
+        if (!Equals(field, value))
+        {
+            field = value;
+            PropertyChanged?.Invoke(this, new(name));
+            return true;
+        }
+        return false;
     }
 
     private string _ipAddress = "";
@@ -52,8 +58,37 @@ public class ScanResult : INotifyPropertyChanged
     public string? CustomName { get; set; }
     public DateTime? FirstSeen { get; set; }
     public DateTime? LastSeen { get; set; }
-    public bool IsOnline { get => _isOnline; set => Set(ref _isOnline, value); }
-    public bool IsCached { get => _isCached; set => Set(ref _isCached, value); }
+    public bool IsOnline 
+    { 
+        get => _isOnline; 
+        set 
+        { 
+            if (Set(ref _isOnline, value))
+            {
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StateLabel)));
+            }
+        } 
+    }
+    public bool IsCached 
+    { 
+        get => _isCached; 
+        set 
+        { 
+            if (Set(ref _isCached, value))
+            {
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StateLabel)));
+            }
+        } 
+    }
+
+    public string StateLabel
+    {
+        get
+        {
+            if (IsCached) return "Cached";
+            return IsOnline ? "Live" : "Offline";
+        }
+    }
 }
 
 

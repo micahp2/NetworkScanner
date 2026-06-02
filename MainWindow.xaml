@@ -13,7 +13,7 @@
             <RowDefinition Height="Auto" />   <!-- status -->
         </Grid.RowDefinitions>
 
-        <!-- ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"? Toolbar ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"? -->
+        <!-- Toolbar -->
         <Border Grid.Row="0"
                 Background="{DynamicResource BackgroundBrush}"
                 BorderBrush="{DynamicResource BorderBrush}"
@@ -25,24 +25,26 @@
                 <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
                     <TextBlock Text="IP Range" FontSize="10" Margin="0,0,0,2"
                                Foreground="{DynamicResource HeaderTextBrush}" />
-                    <TextBox x:Name="RangesText" Width="175" Height="24" Padding="6,3"
-                             VerticalContentAlignment="Center" FontSize="11">
-                        <TextBox.ToolTip>
+                    <ComboBox x:Name="RangesText" Width="250" Height="24" IsEditable="True"
+                              VerticalContentAlignment="Center" FontSize="11">
+                        <ComboBox.ToolTip>
                             <ToolTip>
                                 <StackPanel>
                                     <TextBlock FontWeight="Bold" Text="IP Range formats" Margin="0,0,0,5"/>
-                                    <TextBlock FontFamily="Consolas" Text="192.168.1.0/24              CIDR" />
-                                    <TextBlock FontFamily="Consolas" Text="192.168.1.1-254             last-octet range" />
-                                    <TextBlock FontFamily="Consolas" Text="192.168.1.100               single host" Margin="0,0,0,4"/>
+                                    <TextBlock FontFamily="Consolas" Text="192.168.1.0/24              IPv4 CIDR" />
+                                    <TextBlock FontFamily="Consolas" Text="192.168.1.1-254             IPv4 last-octet range" />
+                                    <TextBlock FontFamily="Consolas" Text="fe80::/120                  IPv6 CIDR (range /112 to /128)" />
+                                    <TextBlock FontFamily="Consolas" Text="fe80::1-fe80::ff            IPv6 range (varies last 32 bits)" />
+                                    <TextBlock FontFamily="Consolas" Text="192.168.1.100 / fe80::1     Single host (IPv4 or IPv6)" Margin="0,0,0,4"/>
                                     <TextBlock FontWeight="SemiBold" Text="Multiple ranges (comma-separated):" Margin="0,0,0,3"/>
                                     <TextBlock FontFamily="Consolas" Text="192.168.2.0/24, 192.168.4.0/24" />
-                                    <TextBlock FontFamily="Consolas" Text="10.0.0.0/24, 192.168.1.1-50" Margin="0,0,0,5"/>
-                                    <TextBlock Foreground="Gray" FontSize="10" MaxWidth="280" TextWrapping="Wrap"
+                                    <TextBlock FontFamily="Consolas" Text="fe80::/120, 192.168.1.0/24" Margin="0,0,0,5"/>
+                                    <TextBlock Foreground="Gray" FontSize="10" MaxWidth="300" TextWrapping="Wrap"
                                                Text="Ranges can also be entered one per line. All ranges are scanned in parallel." />
                                 </StackPanel>
                             </ToolTip>
-                        </TextBox.ToolTip>
-                    </TextBox>
+                        </ComboBox.ToolTip>
+                    </ComboBox>
                 </StackPanel>
 
                 <!-- Ports -->
@@ -67,6 +69,27 @@
                     </TextBox>
                 </StackPanel>
 
+                <!-- Scan IPv6 CheckBox -->
+                <StackPanel VerticalAlignment="Bottom" Margin="0,0,12,4">
+                    <CheckBox x:Name="ScanIPv6Check" Content="IPv6" FontSize="11" IsChecked="False"
+                              Foreground="{DynamicResource TextBrush}"
+                              ToolTip="Enable IPv6 address scanning and auto-discovery of IPv6 neighbors." />
+                </StackPanel>
+
+                <!-- Filter Offline CheckBox -->
+                <StackPanel VerticalAlignment="Bottom" Margin="0,0,12,4">
+                    <CheckBox x:Name="ShowOfflineCheck" Content="Offline" FontSize="11" IsChecked="True"
+                              Foreground="{DynamicResource TextBrush}" Click="FilterCheckBox_Click"
+                              ToolTip="Show/hide offline devices in the results." />
+                </StackPanel>
+
+                <!-- Filter Cached CheckBox -->
+                <StackPanel VerticalAlignment="Bottom" Margin="0,0,12,4">
+                    <CheckBox x:Name="ShowCachedCheck" Content="Cached" FontSize="11" IsChecked="True"
+                              Foreground="{DynamicResource TextBrush}" Click="FilterCheckBox_Click"
+                              ToolTip="Show/hide cached offline devices in the results." />
+                </StackPanel>
+
                 <!-- Scan / Clear / Export -->
                 <Button x:Name="StartButton" Content="Scan" Width="76" Height="24"
                         Background="#0078D4" Foreground="White" FontWeight="SemiBold"
@@ -86,15 +109,12 @@
                         Click="ColumnsButton_Click" VerticalAlignment="Bottom"
                         Margin="0,0,5,0" />
 
-                <!-- Find button + Popup ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"? -->
+                <!-- Find button + Popup -->
                 <Button x:Name="FindButton" Content="Find" Width="44" Height="24"
                         FontSize="11" Click="FindButton_Click"
                         VerticalAlignment="Bottom" ToolTip="Find / search results (Ctrl+F)" />
 
                 <!-- The search popup anchors to FindButton -->
-                <!-- StaysOpen="True" so WPF doesn't capture the mouse to detect  -->
-                <!-- outside clicks ï¿½ï¿½ï¿½?" that capture blocks DataGrid scroll events.  -->
-                <!-- Outside-click detection is handled manually in code-behind.   -->
                 <Popup x:Name="FindPopup"
                        PlacementTarget="{Binding ElementName=FindButton}"
                        Placement="Bottom"
@@ -115,7 +135,7 @@
                                      FontSize="11" VerticalContentAlignment="Center"
                                      TextChanged="SearchBox_TextChanged"
                                      KeyDown="SearchBox_KeyDown"
-                                     ToolTip="Enter = next  Aï¿½ï¿½ï¿½  Shift+Enter = previous  Aï¿½ï¿½ï¿½  Esc = close" />
+                                     ToolTip="Enter = next  Shift+Enter = previous  Esc = close" />
                             <Button Content="^" Width="24" Height="22" FontSize="12"
                                     Click="SearchPrev_Click" Margin="4,0,2,0"
                                     ToolTip="Previous match (Shift+Enter)" />
@@ -132,7 +152,7 @@
             </StackPanel>
         </Border>
 
-        <!-- ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"? Results grid ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"? -->
+        <!-- Results grid -->
         <DataGrid Grid.Row="1" x:Name="ResultsGrid"
                   AutoGenerateColumns="False" CanUserAddRows="False"
                   BorderThickness="0"
@@ -162,23 +182,47 @@
                     <Setter Property="Template">
                         <Setter.Value>
                             <ControlTemplate TargetType="DataGridColumnHeader">
-                                <Border x:Name="HeaderBorder"
-                                        Background="{TemplateBinding Background}"
-                                        BorderBrush="{TemplateBinding BorderBrush}"
-                                        BorderThickness="{TemplateBinding BorderThickness}"
-                                        Padding="{TemplateBinding Padding}">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <ContentPresenter Grid.Column="0" VerticalAlignment="Center" />
-                                        <TextBlock Grid.Column="1" x:Name="SortArrow"
-                                                   Text="ï¿½ï¿½ï¿½+`" FontSize="10" Foreground="#0078D4"
-                                                   VerticalAlignment="Center" Margin="2,0,4,0"
-                                                   Visibility="Collapsed" />
-                                    </Grid>
-                                </Border>
+                                <Grid>
+                                    <Border x:Name="HeaderBorder"
+                                            Background="{TemplateBinding Background}"
+                                            BorderBrush="{TemplateBinding BorderBrush}"
+                                            BorderThickness="{TemplateBinding BorderThickness}"
+                                            Padding="{TemplateBinding Padding}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <ContentPresenter Grid.Column="0" VerticalAlignment="Center" />
+                                            <TextBlock Grid.Column="1" x:Name="SortArrow"
+                                                       Text="" FontSize="10" Foreground="#0078D4"
+                                                       VerticalAlignment="Center" Margin="2,0,4,0"
+                                                       Visibility="Collapsed" />
+                                        </Grid>
+                                    </Border>
+                                    <Thumb x:Name="PART_LeftHeaderGripper"
+                                           HorizontalAlignment="Left"
+                                           Width="6"
+                                           Background="Transparent"
+                                           Cursor="SizeWE">
+                                        <Thumb.Template>
+                                            <ControlTemplate TargetType="Thumb">
+                                                <Border Background="Transparent" Width="{TemplateBinding Width}" />
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                    <Thumb x:Name="PART_RightHeaderGripper"
+                                           HorizontalAlignment="Right"
+                                           Width="6"
+                                           Background="Transparent"
+                                           Cursor="SizeWE">
+                                        <Thumb.Template>
+                                            <ControlTemplate TargetType="Thumb">
+                                                <Border Background="Transparent" Width="{TemplateBinding Width}" />
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Grid>
                                 <ControlTemplate.Triggers>
                                     <Trigger Property="SortDirection" Value="Ascending">
                                         <Setter TargetName="SortArrow"    Property="Visibility" Value="Visible" />
@@ -228,7 +272,7 @@
                 </Style>
             </DataGrid.CellStyle>
 
-            <!-- Row style ï¿½ï¿½ï¿½?" search-match highlight -->
+            <!-- Row style with search-match highlight -->
             <DataGrid.RowStyle>
                 <Style TargetType="DataGridRow">
                     <Style.Triggers>
@@ -240,35 +284,23 @@
             </DataGrid.RowStyle>
 
             <DataGrid.Columns>
-                                <DataGridTemplateColumn Header="Online" Width="70" SortMemberPath="IsOnline">
+                <DataGridTemplateColumn Header="State" Width="80" SortMemberPath="StateLabel">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
-                            <TextBlock Padding="8,0,4,0" VerticalAlignment="Center">
+                            <TextBlock Padding="8,0,4,0" VerticalAlignment="Center" Text="{Binding StateLabel}">
                                 <TextBlock.Style>
                                     <Style TargetType="TextBlock">
-                                        <Setter Property="Text" Value="No" />
+                                        <Setter Property="Foreground" Value="Gray" />
                                         <Style.Triggers>
-                                            <DataTrigger Binding="{Binding IsOnline}" Value="True">
-                                                <Setter Property="Text" Value="Yes" />
+                                            <DataTrigger Binding="{Binding StateLabel}" Value="Live">
+                                                <Setter Property="Foreground" Value="#107C41" />
+                                                <Setter Property="FontWeight" Value="SemiBold" />
                                             </DataTrigger>
-
-                                        </Style.Triggers>
-                                    </Style>
-                                </TextBlock.Style>
-                            </TextBlock>
-                        </DataTemplate>
-                    </DataGridTemplateColumn.CellTemplate>
-                </DataGridTemplateColumn>
-                <DataGridTemplateColumn Header="State" Width="80" SortMemberPath="IsCached">
-                    <DataGridTemplateColumn.CellTemplate>
-                        <DataTemplate>
-                            <TextBlock Padding="8,0,4,0" VerticalAlignment="Center">
-                                <TextBlock.Style>
-                                    <Style TargetType="TextBlock">
-                                        <Setter Property="Text" Value="Live"/>
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding IsCached}" Value="True">
-                                                <Setter Property="Text" Value="Cached"/>
+                                            <DataTrigger Binding="{Binding StateLabel}" Value="Cached">
+                                                <Setter Property="Foreground" Value="Gray" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding StateLabel}" Value="Offline">
+                                                <Setter Property="Foreground" Value="#D83B01" />
                                             </DataTrigger>
                                         </Style.Triggers>
                                     </Style>
@@ -356,7 +388,7 @@
             </DataGrid.Columns>
         </DataGrid>
 
-        <!-- ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"? Status bar ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"?ï¿½ï¿½ï¿½"? -->
+        <!-- Status bar -->
         <Border Grid.Row="2"
                 Background="{DynamicResource BackgroundBrush}"
                 BorderBrush="{DynamicResource BorderBrush}"
@@ -378,11 +410,10 @@
                                NavigateUri="https://github.com/micahp2/NetworkScanner"
                                RequestNavigate="VersionLink_RequestNavigate"
                                Foreground="{DynamicResource HeaderTextBrush}">
-                        <Run x:Name="VersionText" Text="v1.0.6" />
+                        <Run x:Name="VersionText" Text="v1.0.8" />
                     </Hyperlink>
                 </TextBlock>
             </Grid>
         </Border>
     </Grid>
 </Window>
-

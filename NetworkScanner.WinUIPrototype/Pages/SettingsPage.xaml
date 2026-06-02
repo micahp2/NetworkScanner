@@ -1,0 +1,65 @@
+<Page
+    x:Class="NetworkScanner.WinUIPrototype.Pages.SettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <ScrollViewer>
+        <StackPanel Padding="16" Spacing="12">
+            <TextBlock Text="Settings &amp; Scan Options (prototype)" Style="{ThemeResource TitleTextBlockStyle}" />
+            <TextBlock Text="All controls are mock-ready and mapped to existing capabilities." Opacity="0.8" TextWrapping="Wrap" />
+
+            <Expander Header="Scan Options" IsExpanded="True">
+                <StackPanel Spacing="8" Padding="0,8,0,0">
+                    <ToggleSwitch Header="Resolve DNS" IsOn="{Binding ResolveDns, Mode=TwoWay}" />
+                    <ToggleSwitch Header="Lookup MAC" IsOn="{Binding LookupMac, Mode=TwoWay}" />
+                    <ToggleSwitch Header="Lookup Vendor" IsOn="{Binding LookupVendor, Mode=TwoWay}" />
+                    <ToggleSwitch Header="Scan IPv4" IsOn="{Binding ScanIPv4, Mode=TwoWay}" />
+                    <ToggleSwitch Header="Scan IPv6" IsOn="{Binding ScanIPv6, Mode=TwoWay}" />
+
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock Text="Ping Timeout (ms)" VerticalAlignment="Center" Width="140" />
+                        <NumberBox Value="{Binding PingTimeoutMs, Mode=TwoWay}" Minimum="100" Maximum="10000" Width="140" />
+                    </StackPanel>
+
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock Text="Port Timeout (ms)" VerticalAlignment="Center" Width="140" />
+                        <NumberBox Value="{Binding PortTimeoutMs, Mode=TwoWay}" Minimum="100" Maximum="10000" Width="140" />
+                    </StackPanel>
+                </StackPanel>
+            </Expander>
+
+            <Expander Header="Appearance" IsExpanded="True">
+                <StackPanel Spacing="8" Padding="0,8,0,0">
+                    <TextBlock Text="Theme" />
+                    <RadioButtons SelectedItem="{Binding AppThemeMode, Mode=TwoWay}">
+                        <x:String>Use system theme</x:String>
+                        <x:String>Light</x:String>
+                        <x:String>Dark</x:String>
+                    </RadioButtons>
+                    <InfoBar IsOpen="True" Severity="Informational" IsClosable="False"
+                             Message="Prototype uses WinUI theme resources so Light/Dark transition remains easy to implement." />
+                </StackPanel>
+            </Expander>
+
+            <Expander Header="Sound Events" IsExpanded="False">
+                <StackPanel Padding="0,8,0,0" Spacing="8">
+                    <CheckBox Content="Play scan complete sound" IsChecked="True" />
+                    <CheckBox Content="Play scan stopped sound" IsChecked="True" />
+                    <TextBlock Text="(Mock controls; mirrors existing WPF behavior in App.xaml.cs)" Opacity="0.7" />
+                </StackPanel>
+            </Expander>
+
+            <Expander Header="Persistence" IsExpanded="False">
+                <StackPanel Padding="0,8,0,0" Spacing="8">
+                    <CheckBox Content="Persist column layout" IsChecked="True" />
+                    <CheckBox Content="Persist known devices" IsChecked="True" />
+                    <CheckBox Content="Persist OUI vendor cache" IsChecked="True" />
+                    <TextBlock Text="(Mock storage toggles for future implementation wiring)" Opacity="0.7" />
+                </StackPanel>
+            </Expander>
+        </StackPanel>
+    </ScrollViewer>
+</Page>
