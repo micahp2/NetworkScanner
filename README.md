@@ -210,6 +210,23 @@ NetworkScanner/
 
 ## Changelog
 
+### v1.0.8
+
+- **WinUI Parity & Native Title Bar**:
+  - Integrated the native Windows 11 title bar, utilizing `ExtendsContentIntoTitleBar = true` and `SetTitleBar(topBar)` to expose clean system caption buttons.
+  - Resolved custom caption button overlap bugs by offsetting the top bar card.
+  - Implemented a compact collapsed sidebar layout with `84px` width, resolving settings icon truncation and ensuring left-aligned icons.
+  - Fixed spacing between the Scope summary pill and the Scope button.
+  - Resolved hover visual state flashing on multiple navigation buttons.
+- **Synchronized Scrolling & Sizing**:
+  - Implemented synchronized horizontal scrolling by wrapping the entire table grid inside an outer ScrollViewer, disabling individual ListView scrolling to keep the header and rows aligned at all times.
+  - Dynamically calculates the table grid width to match the column sum.
+- **10-Column Table Layout**:
+  - Expanded the WinUI prototype table to 10 columns matching WPF, adding **Custom Name** and **IPv6 Address** columns.
+  - Integrated highlighting and column sorting highlights on all 10 columns.
+- **Release Production Packages**:
+  - Generated fully standalone, self-contained single-file production releases for both the WPF and WinUI 3 Prototype applications (`publish\NetworkScanner-v1.0.8-win-x64.zip` and `publish\NetworkScanner.WinUIPrototype-v1.0.8-win-x64.zip`).
+
 ### v1.0.6
 
 - Improvements to OUI/Vendor caching.
