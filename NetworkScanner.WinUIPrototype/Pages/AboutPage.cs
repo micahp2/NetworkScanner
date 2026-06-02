@@ -23,7 +23,7 @@ public sealed class AboutPage : Page
 
         panel.Children.Add(new TextBlock
         {
-            Text = "Network Scanner WinUI 3 Prototype\nCompatibility mode enabled for local XAML stability.",
+            Text = "Network Scanner WinUI 3 Prototype\nVersion 1.0.8\nCompatibility mode enabled for local XAML stability.",
             TextWrapping = TextWrapping.Wrap,
             Opacity = 0.8
         });

@@ -133,6 +133,15 @@ public static class IPHelperAPI
             byte b3 = (byte)((SinAddr >> 24) & 0xFF);
             return new IPAddress(new[] { b0, b1, b2, b3 });
         }
+
+        public IPAddress? GetIPv6Address()
+        {
+            if (Family != 23) return null; // AF_INET6
+            byte[] bytes = new byte[16];
+            Array.Copy(BitConverter.GetBytes(Sin6AddrLow), 0, bytes, 0, 8);
+            Array.Copy(BitConverter.GetBytes(Sin6AddrHigh), 0, bytes, 8, 8);
+            return new IPAddress(bytes);
+        }
     }
 
     // Confirmed via DiagnosticDump on this machine:
@@ -276,17 +285,24 @@ public static class IPHelperAPI
         IntPtr tablePtr = IntPtr.Zero;
         try
         {
-            if (GetIpNetTable2(AF_INET, out tablePtr) == 0 && tablePtr != IntPtr.Zero)
+            if (GetIpNetTable2(AF_UNSPEC, out tablePtr) == 0 && tablePtr != IntPtr.Zero)
             {
                 uint numEntries = (uint)Marshal.ReadInt32(tablePtr);
                 IntPtr rowPtr = tablePtr + MIB_IPNET_TABLE2_HEADER_SIZE;
                 for (uint i = 0; i < numEntries; i++, rowPtr += MIB_IPNET_ROW2_SIZE)
                 {
                     var row = Marshal.PtrToStructure<MIB_IPNET_ROW2>(rowPtr);
-                    if (row.Family != AF_INET || row.PhysicalAddressLength < 6 || row.PhysicalAddress == null)
+                    if (row.PhysicalAddressLength < 6 || row.PhysicalAddress == null)
                         continue;
-                    var ip = row.GetIPv4Address()?.ToString();
+                    
+                    string? ip = null;
+                    if (row.Family == AF_INET)
+                        ip = row.GetIPv4Address()?.ToString();
+                    else if (row.Family == 23) // AF_INET6
+                        ip = row.GetIPv6Address()?.ToString();
+
                     if (ip == null) continue;
+
                     var mac = FormatMAC(row.PhysicalAddress, (int)row.PhysicalAddressLength);
                     if (mac != null && !result.ContainsKey(ip))
                         result[ip] = mac;
@@ -886,7 +902,39 @@ public static class IPHelperAPI
     }
 
     private static bool IsInLocalSubnet(string ipAddress, string localSubnet)
-        => !string.IsNullOrEmpty(localSubnet) && ipAddress.StartsWith(localSubnet + ".");
+    {
+        if (string.IsNullOrEmpty(ipAddress) || string.IsNullOrEmpty(localSubnet)) return false;
+
+        bool ipIsIPv6 = ipAddress.Contains(':');
+        bool subIsIPv6 = localSubnet.Contains(':');
+
+        // Mismatched IP versions are never in the same subnet
+        if (ipIsIPv6 != subIsIPv6) return false;
+
+        if (ipIsIPv6)
+        {
+            if (ipAddress.StartsWith("ff", StringComparison.OrdinalIgnoreCase)) return false; // multicast
+            if (ipAddress.StartsWith("fe80", StringComparison.OrdinalIgnoreCase)) return true; // link-local
+
+            if (IPAddress.TryParse(ipAddress, out var ip) && IPAddress.TryParse(localSubnet, out var sub))
+            {
+                var ipBytes = ip.GetAddressBytes();
+                var subBytes = sub.GetAddressBytes();
+                if (ipBytes.Length == 16 && subBytes.Length == 16)
+                {
+                    // Compare the first 8 bytes (typical /64 subnet prefix)
+                    for (int i = 0; i < 8; i++)
+                    {
+                        if (ipBytes[i] != subBytes[i]) return false;
+                    }
+                    return true;
+                }
+            }
+            return true; // assume local if in NDP table and no specific subnet comparison was possible
+        }
+
+        return ipAddress.StartsWith(localSubnet + ".");
+    }
 
     private static List<string> GetNeighborTableEntries()
     {
@@ -905,7 +953,6 @@ public static class IPHelperAPI
             {
                 var row = Marshal.PtrToStructure<MIB_IPNET_ROW2>(rowPtr);
 
-                // Only IPv4 entries — IPv6 neighbors can't provide local subnet IPv4 MACs
                 if (row.Family == AF_INET && row.PhysicalAddressLength >= 6)
                 {
                     var rowIP = row.GetIPv4Address();
@@ -918,6 +965,19 @@ public static class IPHelperAPI
                             !ip.StartsWith("255.") && !ip.StartsWith("224.") &&
                             !ip.StartsWith("239.") &&
                             octets[3] != "0" && octets[3] != "255")
+                        {
+                            ips.Add(ip);
+                        }
+                    }
+                }
+                else if (row.Family == 23 && row.PhysicalAddressLength >= 6) // AF_INET6
+                {
+                    var rowIP = row.GetIPv6Address();
+                    if (rowIP != null)
+                    {
+                        var ip = rowIP.ToString();
+                        if (!ip.StartsWith("ff", StringComparison.OrdinalIgnoreCase) && // skip multicast
+                            !ip.Equals("::1")) // skip loopback
                         {
                             ips.Add(ip);
                         }

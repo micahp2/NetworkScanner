@@ -260,15 +260,60 @@ public class NetworkScannerService
                 var parts = range.Split('/');
                 if (parts.Length == 2 &&
                     IPAddress.TryParse(parts[0], out var baseAddr) &&
-                    int.TryParse(parts[1], out int prefix) &&
-                    prefix >= 0 && prefix <= 32)
+                    int.TryParse(parts[1], out int prefix))
                 {
-                    uint baseInt   = IpToUint(baseAddr);
-                    uint mask      = prefix == 0 ? 0u : ~((1u << (32 - prefix)) - 1);
-                    uint network   = baseInt & mask;
-                    uint broadcast = network | ~mask;
-                    for (uint i = network + 1; i < broadcast; i++)
-                        results.Add(UintToIp(i));
+                    if (baseAddr.AddressFamily == AddressFamily.InterNetwork)
+                    {
+                        // IPv4 CIDR
+                        if (prefix >= 0 && prefix <= 32)
+                        {
+                            uint baseInt   = IpToUint(baseAddr);
+                            uint mask      = prefix == 0 ? 0u : ~((1u << (32 - prefix)) - 1);
+                            uint network   = baseInt & mask;
+                            uint broadcast = network | ~mask;
+                            for (uint i = network + 1; i < broadcast; i++)
+                                results.Add(UintToIp(i));
+                        }
+                    }
+                    else if (baseAddr.AddressFamily == AddressFamily.InterNetworkV6)
+                    {
+                        // IPv6 CIDR - safely limit to prefixes between /112 and /128 (max 65,536 addresses)
+                        if (prefix >= 112 && prefix <= 128)
+                        {
+                            var bytes = baseAddr.GetAddressBytes();
+                            int bitsToZero = 128 - prefix;
+                            
+                            // Apply mask
+                            for (int i = 15; i >= 0 && bitsToZero > 0; i--)
+                            {
+                                if (bitsToZero >= 8)
+                                {
+                                    bytes[i] = 0;
+                                    bitsToZero -= 8;
+                                }
+                                else
+                                {
+                                    byte mask = (byte)(255 << bitsToZero);
+                                    bytes[i] &= mask;
+                                    bitsToZero = 0;
+                                }
+                            }
+
+                            int count = 1 << (128 - prefix);
+                            for (int i = 0; i < count; i++)
+                            {
+                                var addrBytes = (byte[])bytes.Clone();
+                                int temp = i;
+                                for (int j = 15; j >= 0 && temp > 0; j--)
+                                {
+                                    int sum = addrBytes[j] + temp;
+                                    addrBytes[j] = (byte)(sum & 0xFF);
+                                    temp = sum >> 8;
+                                }
+                                results.Add(new IPAddress(addrBytes).ToString());
+                            }
+                        }
+                    }
                 }
                 return results;
             }
@@ -278,25 +323,69 @@ public class NetworkScannerService
                 var parts = range.Split('-');
                 if (parts.Length == 2)
                 {
-                    if (IPAddress.TryParse(parts[0].Trim(), out _) &&
-                        int.TryParse(parts[1].Trim(), out int endOctet))
+                    var startStr = parts[0].Trim();
+                    var endStr = parts[1].Trim();
+                    
+                    if (IPAddress.TryParse(startStr, out var startAddr) &&
+                        IPAddress.TryParse(endStr, out var endAddr))
                     {
-                        var octets = parts[0].Trim().Split('.');
-                        if (octets.Length == 4 && int.TryParse(octets[3], out int startOctet))
+                        if (startAddr.AddressFamily == AddressFamily.InterNetwork &&
+                            endAddr.AddressFamily == AddressFamily.InterNetwork)
                         {
-                            string prefix3 = $"{octets[0]}.{octets[1]}.{octets[2]}";
-                            for (int i = startOctet; i <= endOctet && i <= 254; i++)
-                                results.Add($"{prefix3}.{i}");
+                            // IPv4 range
+                            uint s = IpToUint(startAddr), e = IpToUint(endAddr);
+                            for (uint i = s; i <= e; i++)
+                                results.Add(UintToIp(i));
+                            return results;
                         }
-                        return results;
+                        else if (startAddr.AddressFamily == AddressFamily.InterNetworkV6 &&
+                                 endAddr.AddressFamily == AddressFamily.InterNetworkV6)
+                        {
+                            // IPv6 range - support variations in the last 32 bits (max 65,536 addresses)
+                            var sBytes = startAddr.GetAddressBytes();
+                            var eBytes = endAddr.GetAddressBytes();
+                            
+                            bool prefixMatch = true;
+                            for (int i = 0; i < 12; i++)
+                            {
+                                if (sBytes[i] != eBytes[i]) { prefixMatch = false; break; }
+                            }
+                            
+                            if (prefixMatch)
+                            {
+                                uint sVal = ((uint)sBytes[12] << 24) | ((uint)sBytes[13] << 16) | ((uint)sBytes[14] << 8) | sBytes[15];
+                                uint eVal = ((uint)eBytes[12] << 24) | ((uint)eBytes[13] << 16) | ((uint)eBytes[14] << 8) | eBytes[15];
+                                
+                                if (eVal >= sVal && (eVal - sVal) <= 65536)
+                                {
+                                    for (uint val = sVal; val <= eVal; val++)
+                                    {
+                                        var addrBytes = (byte[])sBytes.Clone();
+                                        addrBytes[12] = (byte)((val >> 24) & 0xFF);
+                                        addrBytes[13] = (byte)((val >> 16) & 0xFF);
+                                        addrBytes[14] = (byte)((val >> 8) & 0xFF);
+                                        addrBytes[15] = (byte)(val & 0xFF);
+                                        results.Add(new IPAddress(addrBytes).ToString());
+                                    }
+                                }
+                            }
+                        }
                     }
-                    if (IPAddress.TryParse(parts[0].Trim(), out var start2) &&
-                        IPAddress.TryParse(parts[1].Trim(), out var end2))
+                    else
                     {
-                        uint s = IpToUint(start2), e = IpToUint(end2);
-                        for (uint i = s; i <= e; i++)
-                            results.Add(UintToIp(i));
-                        return results;
+                        // IPv4 fallback for single-octet ranges (e.g. 192.168.1.1-254)
+                        if (IPAddress.TryParse(startStr, out _) &&
+                            int.TryParse(endStr, out int endOctet))
+                        {
+                            var octets = startStr.Split('.');
+                            if (octets.Length == 4 && int.TryParse(octets[3], out int startOctet))
+                            {
+                                string prefix3 = $"{octets[0]}.{octets[1]}.{octets[2]}";
+                                for (int i = startOctet; i <= endOctet && i <= 254; i++)
+                                    results.Add($"{prefix3}.{i}");
+                            }
+                            return results;
+                        }
                     }
                 }
             }
@@ -324,9 +413,21 @@ public class NetworkScannerService
         {
             var parts = range.Split(new[] { '/', '-' }, StringSplitOptions.RemoveEmptyEntries);
             if (parts.Length == 0) return null;
-            var octets = parts[0].Split('.');
-            if (octets.Length != 4) return null;
-            return $"{octets[0]}.{octets[1]}.{octets[2]}";
+            var ipStr = parts[0].Trim();
+            if (ipStr.Contains(':'))
+            {
+                if (IPAddress.TryParse(ipStr, out var ip))
+                {
+                    return ip.ToString();
+                }
+                return null;
+            }
+            else
+            {
+                var octets = ipStr.Split('.');
+                if (octets.Length != 4) return null;
+                return $"{octets[0]}.{octets[1]}.{octets[2]}";
+            }
         }
         catch { return null; }
     }
@@ -341,11 +442,19 @@ public class NetworkScannerService
         var tasks = new List<Task>();
         int probed = 0;
 
+        // Check if any explicit range in IPRanges is IPv6 (contains ':' or parses as IPv6)
+        bool hasExplicitIPv6Range = options.IPRanges.Any(r => 
+            !string.IsNullOrWhiteSpace(r) && 
+            (r.Contains(':') || (IPAddress.TryParse(r.Split('/', '-')[0].Trim(), out var ip) && ip.AddressFamily == AddressFamily.InterNetworkV6))
+        );
+
         foreach (var ip in candidates)
         {
             if (token.IsCancellationRequested) break;
             bool isIPv6 = ip.Contains(':');
-            if (isIPv6 && !options.ScanIPv6) continue;
+            
+            // Strictly skip IPv6 targets unless ScanIPv6 is enabled AND the user explicitly entered an IPv6 target range
+            if (isIPv6 && (!options.ScanIPv6 || !hasExplicitIPv6Range)) continue;
             if (!isIPv6 && !options.ScanIPv4) continue;
 
             await semaphore.WaitAsync(token);
@@ -473,40 +582,69 @@ public class NetworkScannerService
                     if (options.ResolveDNS)
                         result.Hostname = await ResolveHostnameAsync(capturedIp, token);
 
-                    if (options.LookupMAC && result.IPVersion == "IPv4")
+                    if (options.LookupMAC)
                     {
-                        // Check whether this host is on a directly-attached subnet.
-                        // If it's on a different subnet it's reachable only via the router
-                        // at layer 3 - ARP won't cross that boundary, so no MAC is possible.
-                        var ipPrefix = string.Join(".", capturedIp.Split('.').Take(3));
-                        bool isLocal = IsDirectlyReachableIpv4(capturedIp);
+                        if (result.IPVersion == "IPv4")
+                        {
+                            // Check whether this host is on a directly-attached subnet.
+                            // If it's on a different subnet it's reachable only via the router
+                            // at layer 3 - ARP won't cross that boundary, so no MAC is possible.
+                            var ipPrefix = string.Join(".", capturedIp.Split('.').Take(3));
+                            bool isLocal = IsDirectlyReachableIpv4(capturedIp);
 
-                        if (!isLocal)
-                        {
-                            // Show an em dash so it's clear this is expected, not a failure
-                            result.MACAddress = "-";
-                        }
-                        else
-                        {
-                            var macResolution = ResolveMACForHost(capturedIp, macCache, macFrequency);
-                            result.MACAddress = macResolution.Mac;
-                            if (macResolution.Source == "exact_cache") System.Threading.Interlocked.Increment(ref macFromExactCache);
-                            else if (macResolution.Source == "sendarp") System.Threading.Interlocked.Increment(ref macFromSendArp);
-                            else if (macResolution.Source == "rejected_ambiguous") System.Threading.Interlocked.Increment(ref macRejectedAmbiguous);
-                        }
-
-                        // Populate IPv6 address by looking up the MAC in our NDP reverse index
-                        // Only look up IPv6 and vendor for local hosts with a real MAC
-                        if (isLocal && result.MACAddress != null)
-                        {
-                            if (macToIPv6.TryGetValue(result.MACAddress, out var ipv6))
+                            if (!isLocal)
                             {
-                                result.IPv6Address = ipv6;
-                                System.Diagnostics.Debug.WriteLine($"IPv6 found for {capturedIp}: {ipv6}");
+                                // Show an em dash so it's clear this is expected, not a failure
+                                result.MACAddress = "-";
+                            }
+                            else
+                            {
+                                var macResolution = ResolveMACForHost(capturedIp, macCache, macFrequency);
+                                result.MACAddress = macResolution.Mac;
+                                if (macResolution.Source == "exact_cache") System.Threading.Interlocked.Increment(ref macFromExactCache);
+                                else if (macResolution.Source == "sendarp") System.Threading.Interlocked.Increment(ref macFromSendArp);
+                                else if (macResolution.Source == "rejected_ambiguous") System.Threading.Interlocked.Increment(ref macRejectedAmbiguous);
                             }
 
-                            if (options.LookupVendor)
-                                result.Vendor = await LookupVendorAsync(result.MACAddress, token);
+                            // Populate IPv6 address by looking up the MAC in our NDP reverse index
+                            // Only look up IPv6 and vendor for local hosts with a real MAC
+                            if (isLocal && result.MACAddress != null)
+                            {
+                                if (macToIPv6.TryGetValue(result.MACAddress, out var ipv6))
+                                {
+                                    result.IPv6Address = ipv6;
+                                    System.Diagnostics.Debug.WriteLine($"IPv6 found for {capturedIp}: {ipv6}");
+                                }
+
+                                if (options.LookupVendor)
+                                    result.Vendor = await LookupVendorAsync(result.MACAddress, token);
+                            }
+                        }
+                        else if (result.IPVersion == "IPv6")
+                        {
+                            // 1. Try to get MAC from NDP cache (stored in macCache keyed by IPv6 address)
+                            string? mac = null;
+                            if (macCache.TryGetValue(capturedIp, out var cachedMac))
+                            {
+                                mac = NormalizeMacOrNull(cachedMac);
+                            }
+
+                            // 2. Try EUI-64 extraction from the IPv6 address itself
+                            if (mac == null)
+                            {
+                                mac = NormalizeMacOrNull(IPHelperAPI.ExtractMacFromEui64(capturedIp));
+                            }
+
+                            if (mac != null)
+                            {
+                                result.MACAddress = mac;
+                                if (options.LookupVendor)
+                                    result.Vendor = await LookupVendorAsync(mac, token);
+                            }
+                            else
+                            {
+                                result.MACAddress = "-";
+                            }
                         }
                     }
 

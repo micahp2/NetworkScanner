@@ -100,6 +100,8 @@ public class ScanResultRow : ObservableObject
     public SolidColorBrush LastSeenCellBrush => CellBrush("LastSeen");
     public SolidColorBrush VendorCellBrush => CellBrush("Vendor");
     public SolidColorBrush OpenPortsCellBrush => CellBrush("OpenPorts");
+    public SolidColorBrush CustomNameCellBrush => CellBrush("CustomName");
+    public SolidColorBrush IPv6AddressCellBrush => CellBrush("IPv6Address");
 
     public void SetSortedColumn(string key)
     {
@@ -112,6 +114,8 @@ public class ScanResultRow : ObservableObject
         RaisePropertyChanged(nameof(LastSeenCellBrush));
         RaisePropertyChanged(nameof(VendorCellBrush));
         RaisePropertyChanged(nameof(OpenPortsCellBrush));
+        RaisePropertyChanged(nameof(CustomNameCellBrush));
+        RaisePropertyChanged(nameof(IPv6AddressCellBrush));
     }
 
     private SolidColorBrush CellBrush(string key)

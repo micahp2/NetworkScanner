@@ -21,6 +21,7 @@ public partial class MainWindow : Window
     private readonly NetworkScannerService _scannerService;
     private readonly DatabaseService _dbService;
     private readonly ObservableCollection<ScanResult> _results;
+    private readonly ICollectionView _resultsView;
     private readonly HashSet<string> _resultIPIndex = new();
 
     // Search state
@@ -38,7 +39,9 @@ public partial class MainWindow : Window
 
         _scannerService = new NetworkScannerService(_dbService);
         _results        = new ObservableCollection<ScanResult>();
-        ResultsGrid.ItemsSource = _results;
+        _resultsView    = System.Windows.Data.CollectionViewSource.GetDefaultView(_results);
+        _resultsView.Filter = FilterResults;
+        ResultsGrid.ItemsSource = _resultsView;
 
         _scannerService.HostFound     += (_, r) => Dispatcher.Invoke(() => AddResultToGrid(r));
         _scannerService.StatusChanged += (_, s) => Dispatcher.Invoke(() => UpdateStatus(s));
@@ -46,6 +49,7 @@ public partial class MainWindow : Window
 
         Loaded += (_, _) => LoadColumnLayoutOrDefault();
         Closing += (_, _) => SaveColumnLayout();
+        Deactivated += (_, _) => { FindPopup.IsOpen = false; };
 
         _ = LoadCachedDevicesAsync();
 
@@ -83,7 +87,7 @@ public partial class MainWindow : Window
         var ver = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
         VersionText.Text = ver != null ? $"v{ver.Major}.{ver.Minor}.{ver.Build}" : "v1.0.2";
 
-        AutoDetectNetworkRange();
+        PopulateNetworkRanges();
     }
 
     // ── Port parsing ─────────────────────────────────────────────────────────
@@ -111,36 +115,116 @@ public partial class MainWindow : Window
         return ports.OrderBy(p => p).ToList();
     }
 
-    // ── Network range auto-detect ─────────────────────────────────────────────
+    // ── Network range auto-detect and Populate ────────────────────────────────
 
-    private void AutoDetectNetworkRange()
+    private void PopulateNetworkRanges()
     {
+        var ranges = new List<string>();
         try
         {
             var nics = System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces();
             foreach (var nic in nics)
             {
                 if (nic.OperationalStatus != System.Net.NetworkInformation.OperationalStatus.Up) continue;
-                if (nic.NetworkInterfaceType != System.Net.NetworkInformation.NetworkInterfaceType.Ethernet &&
-                    nic.NetworkInterfaceType != System.Net.NetworkInformation.NetworkInterfaceType.Wireless80211) continue;
+                if (nic.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Loopback) continue;
 
-                foreach (var uni in nic.GetIPProperties().UnicastAddresses)
+                var ipProps = nic.GetIPProperties();
+                foreach (var uni in ipProps.UnicastAddresses)
                 {
-                    if (uni.Address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork) continue;
-                    var parts = uni.Address.ToString().Split('.');
-                    if (parts.Length != 4) continue;
-                    if (parts[0] == "169" && parts[1] == "254") continue; // skip APIPA/Tailscale
-                    if (parts[0] == "127") continue;
+                    if (uni.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                    {
+                        var ip = uni.Address;
+                        var mask = uni.IPv4Mask;
+                        if (mask == null) continue;
 
-                    RangesText.Text = $"{parts[0]}.{parts[1]}.{parts[2]}.0/24";
-                    return;
+                        var ipBytes = ip.GetAddressBytes();
+                        var maskBytes = mask.GetAddressBytes();
+                        if (ipBytes.Length != 4 || maskBytes.Length != 4) continue;
+
+                        // Skip APIPA and loopback
+                        if (ipBytes[0] == 169 && ipBytes[1] == 254) continue;
+                        if (ipBytes[0] == 127) continue;
+
+                        var subnetBytes = new byte[4];
+                        for (int i = 0; i < 4; i++)
+                        {
+                            subnetBytes[i] = (byte)(ipBytes[i] & maskBytes[i]);
+                        }
+
+                        int cidr = 0;
+                        foreach (var b in maskBytes)
+                        {
+                            int temp = b;
+                            while (temp > 0)
+                            {
+                                if ((temp & 1) == 1) cidr++;
+                                temp >>= 1;
+                            }
+                        }
+
+                        var subnetIp = new System.Net.IPAddress(subnetBytes);
+                        ranges.Add($"{subnetIp}/{cidr}");
+                    }
+                    else if (uni.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
+                    {
+                        var ip = uni.Address;
+                        if (ip.IsIPv6LinkLocal || ip.IsIPv6Multicast || ip.IsIPv6SiteLocal) continue;
+
+                        var ipv6Bytes = ip.GetAddressBytes();
+                        if (ipv6Bytes.Length == 16)
+                        {
+                            var prefixBytes = new byte[16];
+                            Array.Copy(ipv6Bytes, prefixBytes, 8);
+                            var prefixIp = new System.Net.IPAddress(prefixBytes);
+                            ranges.Add($"{prefixIp}/64");
+                        }
+                    }
                 }
             }
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"AutoDetect: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"Error populating network ranges: {ex.Message}");
         }
+
+        // Add standard link-local IPv6 prefix fe80::/112 as a handy option
+        ranges.Add("fe80::/112");
+
+        // Deduplicate and sort (IPv4 first, then IPv6)
+        var sortedRanges = ranges
+            .Distinct()
+            .OrderBy(r => r.Contains(':')) // false (IPv4) comes before true (IPv6)
+            .ThenBy(r => r)
+            .ToList();
+
+        RangesText.ItemsSource = sortedRanges;
+
+        // Set default text to the first detected IPv4 network
+        var firstIpv4 = sortedRanges.FirstOrDefault(r => !r.Contains(':'));
+        if (firstIpv4 != null)
+        {
+            RangesText.Text = firstIpv4;
+        }
+        else if (sortedRanges.Count > 0)
+        {
+            RangesText.Text = sortedRanges[0];
+        }
+    }
+
+    private bool FilterResults(object item)
+    {
+        if (item is not ScanResult r) return false;
+        if (r.IsCached)
+            return ShowCachedCheck.IsChecked == true;
+        if (!r.IsOnline)
+            return ShowOfflineCheck.IsChecked == true;
+        return true;
+    }
+
+    private void FilterCheckBox_Click(object sender, RoutedEventArgs e)
+    {
+        _resultsView?.Refresh();
+        RefreshStatusCounts();
     }
 
     // ── Button handlers ───────────────────────────────────────────────────────
@@ -176,7 +260,6 @@ public partial class MainWindow : Window
     {
         var desired = new[]
         {
-            "Online",
             "State",
             "IP Address",
             "Hostname",
@@ -343,6 +426,7 @@ public partial class MainWindow : Window
             r.IsOnline = false;
             r.IsCached = true;
         }
+        _resultsView?.Refresh();
 
         StartButton.IsEnabled = false;
         StartButton.Content   = "Stop";
@@ -356,7 +440,7 @@ public partial class MainWindow : Window
             LookupMAC    = true,
             LookupVendor = true,
             ScanIPv4     = true,
-            ScanIPv6     = false,
+            ScanIPv6     = ScanIPv6Check.IsChecked == true,
         });
     }
 
@@ -453,6 +537,7 @@ public partial class MainWindow : Window
         }
 
         RefreshStatusCounts();
+        _resultsView?.Refresh();
 
         // If a search is active, refresh highlights after updates
         if (!string.IsNullOrEmpty(SearchBox.Text))
@@ -479,6 +564,8 @@ public partial class MainWindow : Window
     {
         StartButton.Content   = "Scan";
         StartButton.IsEnabled = true;
+
+        _resultsView?.Refresh();
 
         int live = _results.Count(r => !r.IsCached);
         int cached = _results.Count(r => r.IsCached);
@@ -850,12 +937,52 @@ public partial class MainWindow : Window
         "OpenPortsString" => r.OpenPortsString ?? "",
         "IPv6Address"     => r.IPv6Address     ?? "",
         "CustomName"      => r.CustomName      ?? "",
+        "StateLabel"      => r.StateLabel      ?? "",
         "IsOnline"        => r.IsOnline ? "1" : "0",
         "IsCached"        => r.IsCached ? "1" : "0",
         "FirstSeen"       => r.FirstSeen?.ToString("O") ?? "",
         "LastSeen"        => r.LastSeen?.ToString("O") ?? "",
         _                 => r.IPAddress       ?? "",
     };
+
+    // ── Trackpad / Mouse Horizontal Gesture Scrolling ─────────────────────────
+
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+        var source = PresentationSource.FromVisual(this) as System.Windows.Interop.HwndSource;
+        source?.AddHook(WndProc);
+    }
+
+    private const int WM_MOUSEHWHEEL = 0x020E;
+
+    private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (msg == WM_MOUSEHWHEEL)
+        {
+            int delta = (short)((uint)wParam >> 16);
+            var scrollViewer = GetScrollViewer(ResultsGrid);
+            if (scrollViewer != null)
+            {
+                // Scroll horizontally. A positive delta is tilt right (increase offset).
+                scrollViewer.ScrollToHorizontalOffset(scrollViewer.HorizontalOffset + delta);
+                handled = true;
+            }
+        }
+        return IntPtr.Zero;
+    }
+
+    private static ScrollViewer? GetScrollViewer(DependencyObject depObj)
+    {
+        if (depObj is ScrollViewer viewer) return viewer;
+        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(depObj); i++)
+        {
+            var child = VisualTreeHelper.GetChild(depObj, i);
+            var result = GetScrollViewer(child);
+            if (result != null) return result;
+        }
+        return null;
+    }
 
     // Simple ICommand wrapper for InputBindings
     private sealed class RelayCommand(Action<object?> execute) : System.Windows.Input.ICommand

@@ -23,9 +23,11 @@ public sealed partial class ScannerPage : Page
     private readonly Dictionary<string, Button> _sortHeaderButtons = new();
     private readonly Dictionary<string, FontIcon> _sortHeaderIcons = new();
     private readonly Dictionary<string, Border> _sortHeaderHighlights = new();
-        private readonly double[] _columnWidths = { 170, 130, 170, 90, 150, 150, 170, 130 };
+        private readonly double[] _columnWidths = { 170, 130, 170, 90, 150, 150, 170, 130, 150, 220 };
     private readonly List<ColumnDefinition> _headerColumns = new();
     private ListView _resultsList = null!;
+    private TextBlock _scopeSummary = null!;
+    private Grid _tableGrid = null!;
 
     private bool _isResizingColumn;
     private int _resizingColumnIndex = -1;
@@ -68,7 +70,7 @@ public sealed partial class ScannerPage : Page
             VerticalAlignment = VerticalAlignment.Center
         });
 
-        var scopeSummary = new TextBlock
+        _scopeSummary = new TextBlock
         {
             Opacity = 0.86,
             VerticalAlignment = VerticalAlignment.Center,
@@ -85,19 +87,13 @@ public sealed partial class ScannerPage : Page
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(12),
             Padding = new Thickness(10, 4, 10, 4),
-            Margin = new Thickness(0),
+            Margin = new Thickness(0, 0, 12, 0),
             VerticalAlignment = VerticalAlignment.Center,
-            Child = scopeSummary
+            Child = _scopeSummary
         };
         Grid.SetColumn(scopeSummaryChip, 1);
         titleGrid.Children.Add(scopeSummaryChip);
 
-        void RefreshScopeSummaryText()
-        {
-            var range = string.IsNullOrWhiteSpace(ViewModel.IPRanges) ? "-" : ViewModel.IPRanges.Trim();
-            var ports = string.IsNullOrWhiteSpace(ViewModel.Ports) ? "-" : ViewModel.Ports.Trim();
-            scopeSummary.Text = $"Scope: {range} • {ports}";
-        }
         RefreshScopeSummaryText();
 
         var scopeBtn = new Button
@@ -122,14 +118,57 @@ public sealed partial class ScannerPage : Page
         var scopeFlyoutPanel = new StackPanel { Spacing = 8, Width = 360 };
 
         var scopeRangeLabel = new TextBlock { Text = "IP Address Range", Opacity = 0.85 };
-        var scopeRangeBox = new TextBox { Style = _darkTextBoxStyle };
-        ConfigureDarkTextBox(scopeRangeBox);
-        scopeRangeBox.SetBinding(TextBox.TextProperty, new Binding { Path = new PropertyPath("IPRanges"), Mode = BindingMode.TwoWay, UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged });
-        scopeRangeBox.TextChanged += (_, _) => RefreshScopeSummaryText();
+        var scopeRangeBox = new ComboBox
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            IsEditable = true,
+            Background = Brush(0xFF, 0x11, 0x12, 0x14),
+            Foreground = Brush(0xFF, 0xF2, 0xF2, 0xF4),
+            RequestedTheme = ElementTheme.Dark
+        };
+        scopeRangeBox.Resources["ComboBoxBackground"] = Brush(0xFF, 0x11, 0x12, 0x14);
+        scopeRangeBox.Resources["ComboBoxBackgroundPointerOver"] = Brush(0xFF, 0x16, 0x18, 0x1D);
+        scopeRangeBox.Resources["ComboBoxBackgroundFocused"] = Brush(0xFF, 0x16, 0x18, 0x1D);
+        scopeRangeBox.Resources["ComboBoxForeground"] = Brush(0xFF, 0xF2, 0xF2, 0xF4);
+        scopeRangeBox.Resources["ComboBoxForegroundFocused"] = Brush(0xFF, 0xF2, 0xF2, 0xF4);
+        scopeRangeBox.Resources["ComboBoxBorderBrush"] = Brush(0xFF, 0x2A, 0x2A, 0x2F);
+        scopeRangeBox.Resources["ComboBoxBorderBrushFocused"] = Brush(0xFF, 0x4A, 0x8D, 0xF7);
+
+        scopeRangeBox.ItemsSource = ViewModel.DetectedRanges;
+        scopeRangeBox.SetBinding(ComboBox.TextProperty, new Binding { Path = new PropertyPath("IPRanges"), Mode = BindingMode.TwoWay, UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged });
 
         var scopeSubnetLabel = new TextBlock { Text = "Subnet Mask", Opacity = 0.85 };
         var scopeSubnetBox = new TextBox { Text = "255.255.255.0", Style = _darkTextBoxStyle };
         ConfigureDarkTextBox(scopeSubnetBox);
+
+        var scopePortsLabel = new TextBlock { Text = "Ports", Opacity = 0.85 };
+        var scopePortsBox = new TextBox { Style = _darkTextBoxStyle };
+        ConfigureDarkTextBox(scopePortsBox);
+        scopePortsBox.SetBinding(TextBox.TextProperty, new Binding { Path = new PropertyPath("Ports"), Mode = BindingMode.TwoWay, UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged });
+
+        var scanIPv6Switch = new ToggleSwitch
+        {
+            Header = "Scan IPv6 Addresses",
+            Margin = new Thickness(0, 4, 0, 0),
+            Foreground = Brush(0xFF, 0xF2, 0xF2, 0xF4)
+        };
+        scanIPv6Switch.SetBinding(ToggleSwitch.IsOnProperty, new Binding { Path = new PropertyPath("ScanIPv6"), Mode = BindingMode.TwoWay });
+
+        var showOfflineSwitch = new ToggleSwitch
+        {
+            Header = "Show Offline Devices",
+            Margin = new Thickness(0, 4, 0, 0),
+            Foreground = Brush(0xFF, 0xF2, 0xF2, 0xF4)
+        };
+        showOfflineSwitch.SetBinding(ToggleSwitch.IsOnProperty, new Binding { Path = new PropertyPath("ShowOffline"), Mode = BindingMode.TwoWay });
+
+        var showCachedSwitch = new ToggleSwitch
+        {
+            Header = "Show Cached Devices",
+            Margin = new Thickness(0, 4, 0, 4),
+            Foreground = Brush(0xFF, 0xF2, 0xF2, 0xF4)
+        };
+        showCachedSwitch.SetBinding(ToggleSwitch.IsOnProperty, new Binding { Path = new PropertyPath("ShowCached"), Mode = BindingMode.TwoWay });
 
         var scopeHint = new TextBlock
         {
@@ -138,12 +177,6 @@ public sealed partial class ScannerPage : Page
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 4, 0, 0)
         };
-
-        var scopePortsLabel = new TextBlock { Text = "Ports", Opacity = 0.85 };
-        var scopePortsBox = new TextBox { Style = _darkTextBoxStyle };
-        ConfigureDarkTextBox(scopePortsBox);
-        scopePortsBox.SetBinding(TextBox.TextProperty, new Binding { Path = new PropertyPath("Ports"), Mode = BindingMode.TwoWay, UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged });
-        scopePortsBox.TextChanged += (_, _) => RefreshScopeSummaryText();
 
         var scopeActions = new StackPanel
         {
@@ -159,6 +192,9 @@ public sealed partial class ScannerPage : Page
             scopeRangeBox.Text = "192.168.1.0/24";
             scopeSubnetBox.Text = "255.255.255.0";
             scopePortsBox.Text = "80";
+            scanIPv6Switch.IsOn = false;
+            showOfflineSwitch.IsOn = true;
+            showCachedSwitch.IsOn = true;
             RefreshScopeSummaryText();
         };
 
@@ -181,6 +217,9 @@ public sealed partial class ScannerPage : Page
         scopeFlyoutPanel.Children.Add(scopeSubnetBox);
         scopeFlyoutPanel.Children.Add(scopePortsLabel);
         scopeFlyoutPanel.Children.Add(scopePortsBox);
+        scopeFlyoutPanel.Children.Add(scanIPv6Switch);
+        scopeFlyoutPanel.Children.Add(showOfflineSwitch);
+        scopeFlyoutPanel.Children.Add(showCachedSwitch);
         scopeFlyoutPanel.Children.Add(scopeHint);
         scopeFlyoutPanel.Children.Add(scopeActions);
 
@@ -192,6 +231,8 @@ public sealed partial class ScannerPage : Page
                 Background = Brush(0xFF, 0x15, 0x15, 0x17),
                 BorderBrush = Brush(0xFF, 0x2A, 0x2A, 0x2F),
                 BorderThickness = new Thickness(1),
+                DataContext = ViewModel,
+                RequestedTheme = ElementTheme.Dark,
                 Child = scopeFlyoutPanel
             }
         };
@@ -332,9 +373,10 @@ public sealed partial class ScannerPage : Page
         // Guaranteed table-like view with header row + columns (no third-party dependency)
         var tableCard = Card(new Thickness(0, 0, 0, 0));
         tableCard.Background = Brush(0xFF, 0x13, 0x14, 0x17);
-        var tableGrid = new Grid();
-        tableGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        tableGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        _tableGrid = new Grid();
+        _tableGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        _tableGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        _tableGrid.Width = _columnWidths.Sum() + 12;
 
         var headerBorder = new Border
         {
@@ -355,27 +397,30 @@ public sealed partial class ScannerPage : Page
         }
 
         AddSortableHeaderCell(header, "Device", "Hostname", 0);
-                AddSortableHeaderCell(header, "IP Address", "IPAddress", 1);
-                AddSortableHeaderCell(header, "MAC Address", "MACAddress", 2);
-                AddSortableHeaderCell(header, "Status", "StateLabel", 3);
-                AddSortableHeaderCell(header, "First Seen", "FirstSeen", 4);
-                AddSortableHeaderCell(header, "Last Seen", "LastSeen", 5);
-                AddSortableHeaderCell(header, "Manufacturer", "Vendor", 6);
-                AddSortableHeaderCell(header, "Open Ports", "OpenPorts", 7);
+        AddSortableHeaderCell(header, "IP Address", "IPAddress", 1);
+        AddSortableHeaderCell(header, "MAC Address", "MACAddress", 2);
+        AddSortableHeaderCell(header, "Status", "StateLabel", 3);
+        AddSortableHeaderCell(header, "First Seen", "FirstSeen", 4);
+        AddSortableHeaderCell(header, "Last Seen", "LastSeen", 5);
+        AddSortableHeaderCell(header, "Manufacturer", "Vendor", 6);
+        AddSortableHeaderCell(header, "Open Ports", "OpenPorts", 7);
+        AddSortableHeaderCell(header, "Custom Name", "CustomName", 8);
+        AddSortableHeaderCell(header, "IPv6 Address", "IPv6Address", 9);
         
-                
         AddColumnResizeGrip(header, 0);
-                AddColumnResizeGrip(header, 1);
-                AddColumnResizeGrip(header, 2);
-                AddColumnResizeGrip(header, 3);
-                AddColumnResizeGrip(header, 4);
-                AddColumnResizeGrip(header, 5);
-                AddColumnResizeGrip(header, 6);
-                AddColumnResizeGrip(header, 7);
+        AddColumnResizeGrip(header, 1);
+        AddColumnResizeGrip(header, 2);
+        AddColumnResizeGrip(header, 3);
+        AddColumnResizeGrip(header, 4);
+        AddColumnResizeGrip(header, 5);
+        AddColumnResizeGrip(header, 6);
+        AddColumnResizeGrip(header, 7);
+        AddColumnResizeGrip(header, 8);
+        AddColumnResizeGrip(header, 9);
 
         headerBorder.Child = header;
         Grid.SetRow(headerBorder, 0);
-        tableGrid.Children.Add(headerBorder);
+        _tableGrid.Children.Add(headerBorder);
 
         _resultsList = new ListView
         {
@@ -384,6 +429,8 @@ public sealed partial class ScannerPage : Page
             HorizontalContentAlignment = HorizontalAlignment.Stretch,
             IsTabStop = true
         };
+        ScrollViewer.SetHorizontalScrollBarVisibility(_resultsList, ScrollBarVisibility.Disabled);
+        ScrollViewer.SetHorizontalScrollMode(_resultsList, ScrollMode.Disabled);
         _resultsList.ContainerContentChanging += OnResultContainerContentChanging;
         _resultsList.SetBinding(ItemsControl.ItemsSourceProperty, new Binding { Path = new PropertyPath("Results") });
         _resultsList.SetBinding(ListView.SelectedItemProperty, new Binding { Path = new PropertyPath("SelectedResult"), Mode = BindingMode.TwoWay });
@@ -393,9 +440,17 @@ public sealed partial class ScannerPage : Page
         _resultsList.Margin = new Thickness(6, 0, 6, 0);
 
         Grid.SetRow(_resultsList, 1);
-        tableGrid.Children.Add(_resultsList);
+        _tableGrid.Children.Add(_resultsList);
 
-        tableCard.Child = tableGrid;
+        var tableScrollViewer = new ScrollViewer
+        {
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollMode = ScrollMode.Enabled,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            VerticalScrollMode = ScrollMode.Disabled
+        };
+        tableScrollViewer.Content = _tableGrid;
+        tableCard.Child = tableScrollViewer;
         // Table must be in the star-sized row so ListView gets constrained height and can scroll.
         Grid.SetRow(tableCard, 2);
         content.Children.Add(tableCard);
@@ -422,6 +477,13 @@ public sealed partial class ScannerPage : Page
 
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
+    }
+
+    private void RefreshScopeSummaryText()
+    {
+        var range = string.IsNullOrWhiteSpace(ViewModel.IPRanges) ? "-" : ViewModel.IPRanges.Trim();
+        var ports = string.IsNullOrWhiteSpace(ViewModel.Ports) ? "-" : ViewModel.Ports.Trim();
+        _scopeSummary.Text = $"Scope: {range} • {ports}";
     }
 
     private static Border Card(Thickness margin)
@@ -598,6 +660,8 @@ public sealed partial class ScannerPage : Page
         <ColumnDefinition Width='__W5__'/>
         <ColumnDefinition Width='__W6__'/>
         <ColumnDefinition Width='__W7__'/>
+        <ColumnDefinition Width='__W8__'/>
+        <ColumnDefinition Width='__W9__'/>
       </Grid.ColumnDefinitions>
 
       <Border Grid.Column='0' Background='{Binding HostnameCellBrush}' BorderBrush='#1E2A2F36' BorderThickness='0,0,1,0' Padding='6,0' Margin='0'>
@@ -628,8 +692,16 @@ public sealed partial class ScannerPage : Page
         <TextBlock Tag='Vendor' TextTrimming='CharacterEllipsis' Opacity='0.94'/>
       </Border>
 
-      <Border Grid.Column='7' Background='{Binding OpenPortsCellBrush}' Padding='6,0' Margin='0'>
+      <Border Grid.Column='7' Background='{Binding OpenPortsCellBrush}' BorderBrush='#1E2A2F36' BorderThickness='0,0,1,0' Padding='6,0' Margin='0'>
         <TextBlock Tag='OpenPorts' TextTrimming='CharacterEllipsis' Opacity='0.94'/>
+      </Border>
+
+      <Border Grid.Column='8' Background='{Binding CustomNameCellBrush}' BorderBrush='#1E2A2F36' BorderThickness='0,0,1,0' Padding='6,0' Margin='0'>
+        <TextBlock Tag='CustomName' TextTrimming='CharacterEllipsis' Opacity='0.94'/>
+      </Border>
+
+      <Border Grid.Column='9' Background='{Binding IPv6AddressCellBrush}' Padding='6,0' Margin='0'>
+        <TextBlock Tag='IPv6Address' TextTrimming='CharacterEllipsis' Opacity='0.94'/>
       </Border>
     </Grid>
   </Border>
@@ -644,7 +716,9 @@ public sealed partial class ScannerPage : Page
             .Replace("__W4__", _columnWidths[4].ToString("F0"))
             .Replace("__W5__", _columnWidths[5].ToString("F0"))
             .Replace("__W6__", _columnWidths[6].ToString("F0"))
-            .Replace("__W7__", _columnWidths[7].ToString("F0"));
+            .Replace("__W7__", _columnWidths[7].ToString("F0"))
+            .Replace("__W8__", _columnWidths[8].ToString("F0"))
+            .Replace("__W9__", _columnWidths[9].ToString("F0"));
 
         return (DataTemplate)Microsoft.UI.Xaml.Markup.XamlReader.Load(xaml);
     }
@@ -746,6 +820,8 @@ public sealed partial class ScannerPage : Page
         HighlightTextByTag(root, "LastSeen", row.LastSeen?.ToString("yyyy-MM-dd HH:mm") ?? string.Empty, query, isMatch, isCurrent);
         HighlightTextByTag(root, "Vendor", row.Vendor, query, isMatch, isCurrent);
         HighlightTextByTag(root, "OpenPorts", row.OpenPorts ?? string.Empty, query, isMatch, isCurrent);
+        HighlightTextByTag(root, "CustomName", row.CustomName ?? string.Empty, query, isMatch, isCurrent);
+        HighlightTextByTag(root, "IPv6Address", row.IPv6Address ?? string.Empty, query, isMatch, isCurrent);
     }
 
     private void HighlightTextByTag(FrameworkElement root, string tag, string fullText, string? query, bool isMatch, bool strong)
@@ -870,7 +946,7 @@ public sealed partial class ScannerPage : Page
         // Scope summary is composed from range + ports
         if (e.PropertyName is nameof(ScannerViewModel.IPRanges) or nameof(ScannerViewModel.Ports))
         {
-            // no-op: text is refreshed through local callbacks and retained bindings
+            RefreshScopeSummaryText();
         }
 
         if (e.PropertyName is nameof(ScannerViewModel.CurrentSortColumn) or nameof(ScannerViewModel.IsSortAscending))
@@ -1046,6 +1122,11 @@ public sealed partial class ScannerPage : Page
 
     private void ApplyColumnWidthsToVisibleRows()
     {
+        if (_tableGrid is not null)
+        {
+            _tableGrid.Width = _columnWidths.Sum() + 12;
+        }
+
         if (_resultsList is null) return;
 
         foreach (var item in _resultsList.Items)

@@ -55,7 +55,6 @@ public sealed partial class MainWindow : Window
     private TextBlock _settingsLabel = null!;
 
     private bool _navCollapsed;
-    private bool _isMaximized;
 
     private static SolidColorBrush BgWindow => Brush(0xFF, 0x0E, 0x0F, 0x11);
     private static SolidColorBrush BgCard => Brush(0xFF, 0x15, 0x15, 0x17);
@@ -75,6 +74,8 @@ public sealed partial class MainWindow : Window
 
         Title = "Network Scanner";
 
+        ExtendsContentIntoTitleBar = true;
+
         var root = new Grid { Background = BgWindow };
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
@@ -82,6 +83,8 @@ public sealed partial class MainWindow : Window
         var topBar = BuildTopBar(out _searchToggleBtn);
         Grid.SetRow(topBar, 0);
         root.Children.Add(topBar);
+
+        SetTitleBar(topBar);
 
         var body = new Grid();
         _navColumn = new ColumnDefinition { Width = new GridLength(220) };
@@ -108,9 +111,10 @@ public sealed partial class MainWindow : Window
         var collapseBtn = new Button
         {
             Content = "☰",
-            Width = 40,
             Height = 32,
-            HorizontalAlignment = HorizontalAlignment.Left,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Left,
+            Padding = new Thickness(12, 0, 0, 0),
             Background = BgButton,
             BorderBrush = BorderSubtle,
             Foreground = TextPrimary
@@ -159,7 +163,7 @@ public sealed partial class MainWindow : Window
     {
         var border = new Border
         {
-            Margin = new Thickness(10, 10, 10, 8),
+            Margin = new Thickness(10, 10, 150, 8),
             Padding = new Thickness(10, 8, 10, 8),
             CornerRadius = new CornerRadius(10),
             BorderThickness = new Thickness(1),
@@ -172,10 +176,6 @@ public sealed partial class MainWindow : Window
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(16) });
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(12) });
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
         var icon = new FontIcon { Glyph = "\uE968", FontSize = 18, VerticalAlignment = VerticalAlignment.Center, Foreground = Accent };
         Grid.SetColumn(icon, 0);
@@ -200,7 +200,8 @@ public sealed partial class MainWindow : Window
             BorderThickness = new Thickness(1),
             BorderBrush = BorderSubtle,
             Background = Brush(0xFF, 0x11, 0x12, 0x14),
-            Padding = new Thickness(6, 0, 6, 0)
+            Padding = new Thickness(6, 0, 6, 0),
+            Margin = new Thickness(0)
         };
 
         var searchGrid = new Grid();
@@ -336,49 +337,8 @@ public sealed partial class MainWindow : Window
         Grid.SetColumn(searchSurface, 3);
         row.Children.Add(searchSurface);
 
-        var minBtn = WindowChromeButton("—", () => ShowWindow(WindowNative.GetWindowHandle(this), SW_MINIMIZE));
-        Grid.SetColumn(minBtn, 5);
-        row.Children.Add(minBtn);
-
-        var maxBtn = WindowChromeButton("□", () =>
-        {
-            var hwnd = WindowNative.GetWindowHandle(this);
-            if (_isMaximized)
-            {
-                ShowWindow(hwnd, SW_RESTORE);
-                _isMaximized = false;
-            }
-            else
-            {
-                ShowWindow(hwnd, SW_MAXIMIZE);
-                _isMaximized = true;
-            }
-        });
-        Grid.SetColumn(maxBtn, 6);
-        row.Children.Add(maxBtn);
-
-        var closeBtn = WindowChromeButton("✕", Close);
-        Grid.SetColumn(closeBtn, 7);
-        row.Children.Add(closeBtn);
-
         border.Child = row;
         return border;
-    }
-
-    private Button WindowChromeButton(string text, Action click)
-    {
-        var btn = new Button
-        {
-            Content = text,
-            Width = 40,
-            Height = 30,
-            Margin = new Thickness(4, 0, 0, 0),
-            Background = BgButton,
-            BorderBrush = BorderSubtle,
-            Foreground = TextPrimary
-        };
-        btn.Click += (_, _) => click();
-        return btn;
     }
 
     private void Vm_PropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -441,11 +401,19 @@ public sealed partial class MainWindow : Window
         var btn = new Button
         {
             HorizontalAlignment = HorizontalAlignment.Stretch,
-            Padding = new Thickness(10, 9, 10, 9),
-            Background = BgButton,
-            BorderBrush = BorderSubtle,
+            HorizontalContentAlignment = HorizontalAlignment.Left,
+            Padding = new Thickness(12, 9, 10, 9),
             Foreground = TextPrimary
         };
+
+        btn.Resources["ButtonBackground"] = BgButton;
+        btn.Resources["ButtonBackgroundPointerOver"] = BgButtonHover;
+        btn.Resources["ButtonBackgroundPressed"] = BgSelected;
+        btn.Resources["ButtonBorderBrush"] = BorderSubtle;
+        btn.Resources["ButtonBorderBrushPointerOver"] = BorderSubtle;
+        btn.Resources["ButtonForeground"] = TextPrimary;
+        btn.Resources["ButtonForegroundPointerOver"] = TextPrimary;
+        btn.Resources["ButtonForegroundPressed"] = TextPrimary;
 
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         row.Children.Add(new SymbolIcon(symbol) { Foreground = TextMuted });
@@ -462,7 +430,7 @@ public sealed partial class MainWindow : Window
         _navCollapsed = !_navCollapsed;
         if (_navCollapsed)
         {
-            _navColumn.Width = new GridLength(68);
+            _navColumn.Width = new GridLength(84);
             SetLabelsVisibility(Visibility.Collapsed);
         }
         else
@@ -502,8 +470,24 @@ public sealed partial class MainWindow : Window
 
     private void StyleNavButton(Button button, bool selected)
     {
-        button.Background = selected ? BgSelected : BgButton;
-        button.BorderBrush = selected ? Accent : BorderSubtle;
+        if (selected)
+        {
+            button.Resources["ButtonBackground"] = BgSelected;
+            button.Resources["ButtonBackgroundPointerOver"] = BgSelected;
+            button.Resources["ButtonBorderBrush"] = Accent;
+            button.Resources["ButtonBorderBrushPointerOver"] = Accent;
+        }
+        else
+        {
+            button.Resources["ButtonBackground"] = BgButton;
+            button.Resources["ButtonBackgroundPointerOver"] = BgButtonHover;
+            button.Resources["ButtonBorderBrush"] = BorderSubtle;
+            button.Resources["ButtonBorderBrushPointerOver"] = BorderSubtle;
+        }
+
+        button.ClearValue(Control.BackgroundProperty);
+        button.ClearValue(Control.BorderBrushProperty);
+
         button.Opacity = selected ? 1.0 : 0.92;
     }
 

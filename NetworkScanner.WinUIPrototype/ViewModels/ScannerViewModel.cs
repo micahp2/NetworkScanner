@@ -52,7 +52,7 @@ public class ScannerViewModel : ObservableObject
     {
         _backend = ScannerBackendFactory.Create();
         _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
-        AutoDetectNetworkRange();
+        PopulateNetworkRanges();
         _dbService = new DatabaseService();
         _ = _dbService.InitializeAsync();
         Results = new ObservableCollection<ScanResultRow>();
@@ -95,6 +95,7 @@ public class ScannerViewModel : ObservableObject
         RefreshStatus();
     }
 
+    public ObservableCollection<string> DetectedRanges { get; } = new();
     public ObservableCollection<ScanResultRow> Results { get; }
     public ObservableCollection<ColumnSetting> ColumnSettings { get; }
     public ReadOnlyObservableCollection<string> ScanStateTransitions { get; }
@@ -234,46 +235,99 @@ public class ScannerViewModel : ObservableObject
     }
 
     public int SearchMatchCount => MatchingRows().Count();
+    public bool CanNavigateSearch => MatchingRows().Any();
 
-    public bool CanNavigateSearch => SearchMatchCount > 1;
-
-    private void AutoDetectNetworkRange()
+    private void PopulateNetworkRanges()
     {
-        if (!string.IsNullOrWhiteSpace(IPRanges)) return;
-
+        var ranges = new List<string>();
         try
         {
             var nics = System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces();
             foreach (var nic in nics)
             {
                 if (nic.OperationalStatus != System.Net.NetworkInformation.OperationalStatus.Up) continue;
-                if (nic.NetworkInterfaceType != System.Net.NetworkInformation.NetworkInterfaceType.Ethernet &&
-                    nic.NetworkInterfaceType != System.Net.NetworkInformation.NetworkInterfaceType.Wireless80211) continue;
+                if (nic.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Loopback) continue;
 
-                foreach (var uni in nic.GetIPProperties().UnicastAddresses)
+                var ipProps = nic.GetIPProperties();
+                foreach (var uni in ipProps.UnicastAddresses)
                 {
-                    if (uni.Address.AddressFamily != AddressFamily.InterNetwork) continue;
-                    var parts = uni.Address.ToString().Split('.');
-                    if (parts.Length != 4) continue;
-                    if (parts[0] == "169" && parts[1] == "254") continue;
-                    if (parts[0] == "127") continue;
+                    if (uni.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                    {
+                        var ip = uni.Address;
+                        var mask = uni.IPv4Mask;
+                        if (mask == null) continue;
 
-                    IPRanges = $"{parts[0]}.{parts[1]}.{parts[2]}.0/24";
-                    return;
+                        var ipBytes = ip.GetAddressBytes();
+                        var maskBytes = mask.GetAddressBytes();
+                        if (ipBytes.Length != 4 || maskBytes.Length != 4) continue;
+
+                        if (ipBytes[0] == 169 && ipBytes[1] == 254) continue;
+                        if (ipBytes[0] == 127) continue;
+
+                        var subnetBytes = new byte[4];
+                        for (int i = 0; i < 4; i++)
+                        {
+                            subnetBytes[i] = (byte)(ipBytes[i] & maskBytes[i]);
+                        }
+
+                        int cidr = 0;
+                        foreach (var b in maskBytes)
+                        {
+                            int temp = b;
+                            while (temp > 0)
+                            {
+                                if ((temp & 1) == 1) cidr++;
+                                temp >>= 1;
+                            }
+                        }
+
+                        var subnetIp = new IPAddress(subnetBytes);
+                        ranges.Add($"{subnetIp}/{cidr}");
+                    }
+                    else if (uni.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
+                    {
+                        var ip = uni.Address;
+                        if (ip.IsIPv6LinkLocal || ip.IsIPv6Multicast || ip.IsIPv6SiteLocal) continue;
+
+                        var ipv6Bytes = ip.GetAddressBytes();
+                        if (ipv6Bytes.Length == 16)
+                        {
+                            var prefixBytes = new byte[16];
+                            Array.Copy(ipv6Bytes, prefixBytes, 8);
+                            var prefixIp = new IPAddress(prefixBytes);
+                            ranges.Add($"{prefixIp}/64");
+                        }
+                    }
                 }
-            }
-
-            if (string.IsNullOrWhiteSpace(IPRanges))
-            {
-                IPRanges = "192.168.1.0/24";
             }
         }
         catch
         {
-            if (string.IsNullOrWhiteSpace(IPRanges))
-            {
-                IPRanges = "192.168.1.0/24";
-            }
+            // fallback
+        }
+
+        ranges.Add("fe80::/112");
+
+        var sortedRanges = ranges
+            .Distinct()
+            .OrderBy(r => r.Contains(':'))
+            .ThenBy(r => r)
+            .ToList();
+
+        DetectedRanges.Clear();
+        foreach (var r in sortedRanges)
+        {
+            DetectedRanges.Add(r);
+        }
+
+        var firstIpv4 = sortedRanges.FirstOrDefault(r => !r.Contains(':'));
+        if (firstIpv4 != null)
+        {
+            IPRanges = firstIpv4;
+        }
+        else if (sortedRanges.Count > 0)
+        {
+            IPRanges = sortedRanges[0];
         }
     }
 
@@ -818,6 +872,8 @@ public class ScannerViewModel : ObservableObject
             "FirstSeen" => _sortAscending ? Results.OrderBy(r => r.FirstSeen) : Results.OrderByDescending(r => r.FirstSeen),
             "LastSeen" => _sortAscending ? Results.OrderBy(r => r.LastSeen) : Results.OrderByDescending(r => r.LastSeen),
             "OpenPorts" => _sortAscending ? Results.OrderBy(r => r.OpenPorts) : Results.OrderByDescending(r => r.OpenPorts),
+            "CustomName" => _sortAscending ? Results.OrderBy(r => r.CustomName) : Results.OrderByDescending(r => r.CustomName),
+            "IPv6Address" => _sortAscending ? Results.OrderBy(r => r.IPv6Address) : Results.OrderByDescending(r => r.IPv6Address),
             _ => _sortAscending ? Results.OrderBy(r => r.IPAddress) : Results.OrderByDescending(r => r.IPAddress)
         };
 
