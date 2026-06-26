@@ -37,6 +37,12 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
+        if (!IsRunningAsAdmin())
+        {
+            AdminWarningText.Visibility = Visibility.Visible;
+            RestartAdminBtn.Visibility = Visibility.Visible;
+        }
+
         _dbService = new DatabaseService();
         _ = _dbService.InitializeAsync();
 
@@ -1102,6 +1108,40 @@ public partial class MainWindow : Window
                 if (c != 0) return c;
             }
             return x.Length.CompareTo(y.Length);
+        }
+    }
+
+    private static bool IsRunningAsAdmin()
+    {
+        try
+        {
+            using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+            var principal = new System.Security.Principal.WindowsPrincipal(identity);
+            return principal.IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
+        }
+        catch { return false; }
+    }
+
+    private void RestartAdminBtn_Click(object sender, RoutedEventArgs e)
+    {
+        var exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
+        if (string.IsNullOrEmpty(exePath)) return;
+
+        var psi = new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = exePath,
+            UseShellExecute = true,
+            Verb = "runas"
+        };
+
+        try
+        {
+            System.Diagnostics.Process.Start(psi);
+            Application.Current.Shutdown();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Failed to restart as Administrator: {ex.Message}", "Elevation Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 }

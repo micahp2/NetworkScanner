@@ -72,4 +72,26 @@ public class NetworkScannerTests
         var result = await NetworkScannerService.ScanPortAsync("127.0.0.1", port, 1000, CancellationToken.None);
         result.Should().BeFalse();
     }
+
+    [Fact]
+    public void IcmpPacket_Should_Serialize_And_Checksum_Correctly()
+    {
+        var packet = new IcmpPacket
+        {
+            Type = 8,
+            Code = 0,
+            Identifier = 0x1234,
+            Sequence = 0x5678,
+            Data = new byte[] { 1, 2, 3, 4 }
+        };
+
+        var bytes = packet.Serialize();
+
+        bytes.Length.Should().Be(12);
+        bytes[0].Should().Be(8);
+        bytes[1].Should().Be(0);
+
+        ushort check = IcmpPacket.ComputeChecksum(bytes);
+        check.Should().Be(0);
+    }
 }

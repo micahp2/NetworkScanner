@@ -192,6 +192,25 @@ public class NetworkScannerService
 
     private async Task<List<string>> PingAllAsync(IEnumerable<string> candidates, ScanOptions options, CancellationToken token)
     {
+        try
+        {
+            StatusChanged?.Invoke(this, "Starting stateless ICMP host discovery...");
+            return await PingAllStatelessAsync(candidates, options, token);
+        }
+        catch (SocketException ex) when (ex.SocketErrorCode == SocketError.AccessDenied)
+        {
+            StatusChanged?.Invoke(this, "Raw socket access denied (requires Admin). Falling back to managed ping...");
+            return await PingAllLegacyAsync(candidates, options, token);
+        }
+        catch (Exception ex)
+        {
+            StatusChanged?.Invoke(this, $"Stateless ICMP failed ({ex.Message}). Falling back to managed ping...");
+            return await PingAllLegacyAsync(candidates, options, token);
+        }
+    }
+
+    private async Task<List<string>> PingAllLegacyAsync(IEnumerable<string> candidates, ScanOptions options, CancellationToken token)
+    {
         var liveHosts = new ConcurrentBag<string>();
         var sem = new SemaphoreSlim(50);
         var tasks = candidates.Select(async ip => {
@@ -210,6 +229,213 @@ public class NetworkScannerService
             var reply = await ping.SendPingAsync(ip, timeout);
             return reply.Status == IPStatus.Success;
         } catch { return false; }
+    }
+
+    private async Task<List<string>> PingAllStatelessAsync(IEnumerable<string> candidates, ScanOptions options, CancellationToken token)
+    {
+        var ipv4Targets = new List<IPAddress>();
+        var ipv6Targets = new List<IPAddress>();
+
+        foreach (var ipStr in candidates)
+        {
+            if (IPAddress.TryParse(ipStr, out var addr))
+            {
+                if (addr.AddressFamily == AddressFamily.InterNetwork && options.ScanIPv4)
+                    ipv4Targets.Add(addr);
+                else if (addr.AddressFamily == AddressFamily.InterNetworkV6 && options.ScanIPv6)
+                    ipv6Targets.Add(addr);
+            }
+        }
+
+        var responsiveHosts = new ConcurrentBag<string>();
+        var tasks = new List<Task>();
+
+        if (ipv4Targets.Count > 0)
+        {
+            tasks.Add(RunStatelessPingV4Async(ipv4Targets, options.PingTimeout, responsiveHosts, token));
+        }
+        if (ipv6Targets.Count > 0)
+        {
+            tasks.Add(RunStatelessPingV6Async(ipv6Targets, options.PingTimeout, responsiveHosts, token));
+        }
+
+        await Task.WhenAll(tasks);
+        return responsiveHosts.ToList();
+    }
+
+    private async Task RunStatelessPingV4Async(List<IPAddress> targets, int timeoutMs, ConcurrentBag<string> responsiveHosts, CancellationToken token)
+    {
+        using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Raw, ProtocolType.Icmp);
+        socket.Bind(new IPEndPoint(IPAddress.Any, 0));
+
+        ushort scannerId = (ushort)(Environment.ProcessId & 0xFFFF);
+        var seenResponses = new ConcurrentDictionary<string, bool>(StringComparer.Ordinal);
+
+        var receiverTask = Task.Run(async () =>
+        {
+            var buffer = new byte[65536];
+            EndPoint remoteEP = new IPEndPoint(IPAddress.Any, 0);
+
+            while (!token.IsCancellationRequested)
+            {
+                try
+                {
+                    if (socket.Poll(10000, SelectMode.SelectRead))
+                    {
+                        var result = socket.ReceiveFrom(buffer, ref remoteEP);
+                        if (result < 28) continue;
+
+                        int ihl = (buffer[0] & 0x0F) * 4;
+                        if (result < ihl + 8) continue;
+
+                        int type = buffer[ihl + 0];
+                        int code = buffer[ihl + 1];
+
+                        if (type == 0 && code == 0) // Echo Reply
+                        {
+                            ushort replyId = BitConverter.ToUInt16(buffer, ihl + 4);
+                            if (replyId == scannerId)
+                            {
+                                var responderIp = ((IPEndPoint)remoteEP).Address.ToString();
+                                if (seenResponses.TryAdd(responderIp, true))
+                                {
+                                    responsiveHosts.Add(responderIp);
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        await Task.Delay(1, token);
+                    }
+                }
+                catch (SocketException ex) when (ex.SocketErrorCode == SocketError.Interrupted || ex.SocketErrorCode == SocketError.OperationAborted)
+                {
+                    break;
+                }
+                catch (Exception) {}
+            }
+        }, token);
+
+        var seq = (ushort)0;
+        int count = 0;
+        foreach (var target in targets)
+        {
+            if (token.IsCancellationRequested) break;
+
+            var packet = new NetworkScanner.Core.IcmpPacket
+            {
+                Type = 8, // Echo Request
+                Code = 0,
+                Identifier = scannerId,
+                Sequence = seq++,
+                Data = new byte[32]
+            };
+            Random.Shared.NextBytes(packet.Data);
+
+            var packetBytes = packet.Serialize();
+            try
+            {
+                socket.SendTo(packetBytes, new IPEndPoint(target, 0));
+            }
+            catch {}
+
+            count++;
+            if (count % 10 == 0)
+            {
+                await Task.Delay(1, token);
+            }
+        }
+
+        await Task.Delay(timeoutMs, token);
+        try { socket.Close(); } catch {}
+        await receiverTask;
+    }
+
+    private async Task RunStatelessPingV6Async(List<IPAddress> targets, int timeoutMs, ConcurrentBag<string> responsiveHosts, CancellationToken token)
+    {
+        using var socket = new Socket(AddressFamily.InterNetworkV6, SocketType.Raw, ProtocolType.IcmpV6);
+        socket.Bind(new IPEndPoint(IPAddress.IPv6Any, 0));
+
+        ushort scannerId = (ushort)(Environment.ProcessId & 0xFFFF);
+        var seenResponses = new ConcurrentDictionary<string, bool>(StringComparer.Ordinal);
+
+        var receiverTask = Task.Run(async () =>
+        {
+            var buffer = new byte[65536];
+            EndPoint remoteEP = new IPEndPoint(IPAddress.IPv6Any, 0);
+
+            while (!token.IsCancellationRequested)
+            {
+                try
+                {
+                    if (socket.Poll(10000, SelectMode.SelectRead))
+                    {
+                        var result = socket.ReceiveFrom(buffer, ref remoteEP);
+                        if (result < 8) continue;
+
+                        int type = buffer[0];
+                        int code = buffer[1];
+
+                        if (type == 129 && code == 0) // ICMPv6 Echo Reply
+                        {
+                            ushort replyId = BitConverter.ToUInt16(buffer, 4);
+                            if (replyId == scannerId)
+                            {
+                                var responderIp = ((IPEndPoint)remoteEP).Address.ToString();
+                                if (seenResponses.TryAdd(responderIp, true))
+                                {
+                                    responsiveHosts.Add(responderIp);
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        await Task.Delay(1, token);
+                    }
+                }
+                catch (SocketException ex) when (ex.SocketErrorCode == SocketError.Interrupted || ex.SocketErrorCode == SocketError.OperationAborted)
+                {
+                    break;
+                }
+                catch (Exception) {}
+            }
+        }, token);
+
+        var seq = (ushort)0;
+        int count = 0;
+        foreach (var target in targets)
+        {
+            if (token.IsCancellationRequested) break;
+
+            var packet = new NetworkScanner.Core.IcmpPacket
+            {
+                Type = 128, // ICMPv6 Echo Request
+                Code = 0,
+                Identifier = scannerId,
+                Sequence = seq++,
+                Data = new byte[32]
+            };
+            Random.Shared.NextBytes(packet.Data);
+
+            var packetBytes = packet.Serialize();
+            try
+            {
+                socket.SendTo(packetBytes, new IPEndPoint(target, 0));
+            }
+            catch {}
+
+            count++;
+            if (count % 10 == 0)
+            {
+                await Task.Delay(1, token);
+            }
+        }
+
+        await Task.Delay(timeoutMs, token);
+        try { socket.Close(); } catch {}
+        await receiverTask;
     }
 
     public static async Task<bool> ScanPortAsync(string ipAddress, int port, int timeoutMs, CancellationToken token) {

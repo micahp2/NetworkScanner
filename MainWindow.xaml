@@ -431,16 +431,21 @@
                            Text="Ready" FontSize="11"
                            Foreground="{DynamicResource TextBrush}"
                            VerticalAlignment="Center" />
-                <TextBlock Grid.Column="1" FontSize="10"
-                           VerticalAlignment="Center"
-                           Foreground="{DynamicResource HeaderTextBrush}">
-                    <Hyperlink x:Name="VersionLink"
-                               NavigateUri="https://github.com/micahp2/NetworkScanner"
-                               RequestNavigate="VersionLink_RequestNavigate"
-                               Foreground="{DynamicResource HeaderTextBrush}">
-                        <Run x:Name="VersionText" Text="v1.0.8" />
-                    </Hyperlink>
-                </TextBlock>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock x:Name="AdminWarningText" Text="⚠️ Standard User (Limited performance)" 
+                               Foreground="#FFB300" FontSize="11" Margin="0,0,10,0" VerticalAlignment="Center" Visibility="Collapsed" />
+                    <Button x:Name="RestartAdminBtn" Content="Restart as Admin" FontSize="10" Padding="6,1"
+                            Background="Transparent" BorderBrush="{DynamicResource BorderBrush}" 
+                            Foreground="{DynamicResource TextBrush}" Click="RestartAdminBtn_Click" Visibility="Collapsed" Margin="0,0,15,0" />
+                    <TextBlock FontSize="10" VerticalAlignment="Center" Foreground="{DynamicResource HeaderTextBrush}">
+                        <Hyperlink x:Name="VersionLink"
+                                   NavigateUri="https://github.com/micahp2/NetworkScanner"
+                                   RequestNavigate="VersionLink_RequestNavigate"
+                                   Foreground="{DynamicResource HeaderTextBrush}">
+                            <Run x:Name="VersionText" Text="v1.0.8" />
+                        </Hyperlink>
+                    </TextBlock>
+                </StackPanel>
             </Grid>
         </Border>
     </Grid>

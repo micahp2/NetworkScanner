@@ -542,11 +542,42 @@ public sealed partial class ScannerPage : Page
         footer.Background = Brush(0xFF, 0x12, 0x13, 0x16);
         var footerGrid = new Grid();
         footerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        footerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
         var statusText = new TextBlock { VerticalAlignment = VerticalAlignment.Center };
         statusText.SetBinding(TextBlock.TextProperty, new Binding { Path = new PropertyPath("StatusText") });
         Grid.SetColumn(statusText, 0);
         footerGrid.Children.Add(statusText);
+
+        if (!IsRunningAsAdmin())
+        {
+            var adminStack = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
+            
+            var warningText = new TextBlock 
+            { 
+                Text = "⚠️ Standard User (Limited performance)", 
+                Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(0xFF, 0xFF, 0xB3, 0x00)),
+                FontSize = 12,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            adminStack.Children.Add(warningText);
+
+            var restartBtn = new Button 
+            { 
+                Content = "Restart as Admin", 
+                FontSize = 11,
+                Padding = new Thickness(8, 2, 8, 2),
+                Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0, 0, 0, 0)),
+                BorderBrush = Brush(0xFF, 0x2A, 0x2A, 0x2F),
+                BorderThickness = new Thickness(1),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            restartBtn.Click += (s, e) => RestartAsAdmin();
+            adminStack.Children.Add(restartBtn);
+
+            Grid.SetColumn(adminStack, 1);
+            footerGrid.Children.Add(adminStack);
+        }
 
         footer.Child = footerGrid;
         Grid.SetRow(footer, 1);
@@ -1520,5 +1551,36 @@ public sealed partial class ScannerPage : Page
         {
             // fallback
         }
+    }
+
+    private static bool IsRunningAsAdmin()
+    {
+        try
+        {
+            using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+            var principal = new System.Security.Principal.WindowsPrincipal(identity);
+            return principal.IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
+        }
+        catch { return false; }
+    }
+
+    private static void RestartAsAdmin()
+    {
+        var exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
+        if (string.IsNullOrEmpty(exePath)) return;
+
+        var psi = new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = exePath,
+            UseShellExecute = true,
+            Verb = "runas"
+        };
+
+        try
+        {
+            System.Diagnostics.Process.Start(psi);
+            Microsoft.UI.Xaml.Application.Current.Exit();
+        }
+        catch {}
     }
 }

@@ -75,4 +75,69 @@ namespace NetworkScanner.Core
             }
         }
     }
+
+    public class IcmpPacket
+    {
+        public byte Type { get; set; }
+        public byte Code { get; set; }
+        public ushort Checksum { get; set; }
+        public ushort Identifier { get; set; }
+        public ushort Sequence { get; set; }
+        public byte[] Data { get; set; } = Array.Empty<byte>();
+
+        public byte[] Serialize()
+        {
+            var buffer = new byte[8 + Data.Length];
+            buffer[0] = Type;
+            buffer[1] = Code;
+            buffer[2] = 0; // Checksum placeholder
+            buffer[3] = 0; // Checksum placeholder
+            
+            var idBytes = BitConverter.GetBytes(Identifier);
+            buffer[4] = idBytes[0];
+            buffer[5] = idBytes[1];
+            
+            var seqBytes = BitConverter.GetBytes(Sequence);
+            buffer[6] = seqBytes[0];
+            buffer[7] = seqBytes[1];
+            
+            if (Data.Length > 0)
+            {
+                Buffer.BlockCopy(Data, 0, buffer, 8, Data.Length);
+            }
+            
+            ushort checksum = ComputeChecksum(buffer);
+            var checksumBytes = BitConverter.GetBytes(checksum);
+            buffer[2] = checksumBytes[0];
+            buffer[3] = checksumBytes[1];
+            
+            return buffer;
+        }
+
+        public static ushort ComputeChecksum(byte[] buffer)
+        {
+            int length = buffer.Length;
+            uint sum = 0;
+            int i = 0;
+
+            while (length > 1)
+            {
+                sum += (uint)BitConverter.ToUInt16(buffer, i);
+                i += 2;
+                length -= 2;
+            }
+
+            if (length > 0)
+            {
+                sum += buffer[i];
+            }
+
+            while ((sum >> 16) != 0)
+            {
+                sum = (sum & 0xffff) + (sum >> 16);
+            }
+
+            return (ushort)(~sum);
+        }
+    }
 }
