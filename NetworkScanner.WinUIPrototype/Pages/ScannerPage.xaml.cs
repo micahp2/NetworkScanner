@@ -1086,12 +1086,6 @@ public sealed partial class ScannerPage : Page
             UpdateScanActionVisual();
         }
 
-        if (e.PropertyName == nameof(ScannerViewModel.StatusText))
-        {
-            _resultsList?.UpdateLayout();
-            RefreshVisibleRowVisuals();
-        }
-
         if (e.PropertyName == nameof(ScannerViewModel.SelectedResult))
         {
             RefreshVisibleRowVisuals();

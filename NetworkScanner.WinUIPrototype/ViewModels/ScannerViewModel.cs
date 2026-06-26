@@ -420,6 +420,7 @@ public class ScannerViewModel : ObservableObject
                         row.IsCached = false;
                         row.FirstSeen ??= now;
                         row.LastSeen ??= now;
+                        row.SetSortedColumn(_sortColumn);
                         Results.Add(row);
                         _resultIPIndex.Add(row.IPAddress);
                         persistTarget = row;
@@ -442,8 +443,10 @@ public class ScannerViewModel : ObservableObject
 
                     _ = PersistDeviceAsync(persistTarget);
 
-                    ApplySortColumnHighlights();
-                    ApplySearchHighlights();
+                    if (!string.IsNullOrEmpty(SearchText))
+                    {
+                        ApplySearchHighlights();
+                    }
                     UpdateStatusWithCounts();
                 }),
                 onStatus: status => RunOnUi(() =>
