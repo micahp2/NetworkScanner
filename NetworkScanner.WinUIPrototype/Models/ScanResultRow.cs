@@ -6,10 +6,17 @@ namespace NetworkScanner.WinUIPrototype.Models;
 
 public class ScanResultRow : ObservableObject
 {
+    private static readonly SolidColorBrush TransparentBrush = new(ColorHelper.FromArgb(0x00, 0x00, 0x00, 0x00));
+    private static readonly SolidColorBrush SearchMatchBrush = new(ColorHelper.FromArgb(0x22, 0x2E, 0x7D, 0xFF));
+    private static readonly SolidColorBrush SearchCurrentBrush = new(ColorHelper.FromArgb(0x66, 0x2E, 0x7D, 0xFF));
+    private static readonly SolidColorBrush SearchMatchBorderBrush = new(ColorHelper.FromArgb(0x44, 0x8C, 0xA8, 0xFF));
+    private static readonly SolidColorBrush SearchCurrentBorderBrush = new(ColorHelper.FromArgb(0xCC, 0x8C, 0xA8, 0xFF));
+
     private bool _isOnline;
     private bool _isCached;
     private bool _isSearchMatch;
     private bool _isCurrentSearchHit;
+    private bool _isSelectedRow;
     private string _searchQuery = string.Empty;
     private string _sortedColumn = string.Empty;
 
@@ -51,13 +58,25 @@ public class ScanResultRow : ObservableObject
     public bool IsSearchMatch
     {
         get => _isSearchMatch;
-        set => SetProperty(ref _isSearchMatch, value);
+        set
+        {
+            if (SetProperty(ref _isSearchMatch, value))
+            {
+                RaiseSearchRowChromeChanged();
+            }
+        }
     }
 
     public bool IsCurrentSearchHit
     {
         get => _isCurrentSearchHit;
-        set => SetProperty(ref _isCurrentSearchHit, value);
+        set
+        {
+            if (SetProperty(ref _isCurrentSearchHit, value))
+            {
+                RaiseSearchRowChromeChanged();
+            }
+        }
     }
 
     public string SearchQuery
@@ -66,9 +85,79 @@ public class ScanResultRow : ObservableObject
         set => SetProperty(ref _searchQuery, value);
     }
 
+    public void SetSelectedRow(bool selected)
+    {
+        if (SetProperty(ref _isSelectedRow, selected))
+        {
+            RaiseSearchRowChromeChanged();
+        }
+    }
+
+    public SolidColorBrush SearchRowBackground
+    {
+        get
+        {
+            if (_isSelectedRow || IsCurrentSearchHit)
+            {
+                return SearchCurrentBrush;
+            }
+
+            if (IsSearchMatch)
+            {
+                return SearchMatchBrush;
+            }
+
+            return TransparentBrush;
+        }
+    }
+
+    public SolidColorBrush SearchRowBorderBrush
+    {
+        get
+        {
+            if (_isSelectedRow || IsCurrentSearchHit)
+            {
+                return SearchCurrentBorderBrush;
+            }
+
+            if (IsSearchMatch)
+            {
+                return SearchMatchBorderBrush;
+            }
+
+            return TransparentBrush;
+        }
+    }
+
     public string CustomName { get => _customName; set => SetProperty(ref _customName, value); }
-    public DateTimeOffset? FirstSeen { get => _firstSeen; set => SetProperty(ref _firstSeen, value); }
-    public DateTimeOffset? LastSeen { get => _lastSeen; set => SetProperty(ref _lastSeen, value); }
+
+    public DateTimeOffset? FirstSeen
+    {
+        get => _firstSeen;
+        set
+        {
+            if (SetProperty(ref _firstSeen, value))
+            {
+                RaisePropertyChanged(nameof(FirstSeenText));
+            }
+        }
+    }
+
+    public DateTimeOffset? LastSeen
+    {
+        get => _lastSeen;
+        set
+        {
+            if (SetProperty(ref _lastSeen, value))
+            {
+                RaisePropertyChanged(nameof(LastSeenText));
+            }
+        }
+    }
+
+    public string FirstSeenText => FirstSeen?.ToString("yyyy-MM-dd HH:mm") ?? string.Empty;
+    public string LastSeenText => LastSeen?.ToString("yyyy-MM-dd HH:mm") ?? string.Empty;
+
     public string IPAddress { get => _ipAddress; set => SetProperty(ref _ipAddress, value); }
     public string Hostname { get => _hostname; set => SetProperty(ref _hostname, value); }
     public string MACAddress { get => _macAddress; set => SetProperty(ref _macAddress, value); }
@@ -118,10 +207,16 @@ public class ScanResultRow : ObservableObject
         RaisePropertyChanged(nameof(IPv6AddressCellBrush));
     }
 
+    private void RaiseSearchRowChromeChanged()
+    {
+        RaisePropertyChanged(nameof(SearchRowBackground));
+        RaisePropertyChanged(nameof(SearchRowBorderBrush));
+    }
+
     private SolidColorBrush CellBrush(string key)
     {
         return string.Equals(_sortedColumn, key, StringComparison.OrdinalIgnoreCase)
             ? new SolidColorBrush(ColorHelper.FromArgb(0x1C, 0x4A, 0x8D, 0xF7))
             : new SolidColorBrush(ColorHelper.FromArgb(0x00, 0x00, 0x00, 0x00));
     }
-}
+}

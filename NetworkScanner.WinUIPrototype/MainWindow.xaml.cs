@@ -329,6 +329,7 @@ public sealed partial class MainWindow : Window
             var hasText = !string.IsNullOrWhiteSpace(_vm.SearchText);
             if (!hasText && !_vm.IsSearching)
             {
+                _vm.IsSearching = true;
                 _searchBox?.Focus(FocusState.Programmatic);
                 return;
             }
@@ -370,16 +371,6 @@ public sealed partial class MainWindow : Window
             Foreground = active ? Accent : TextMuted
         };
         ToolTipService.SetToolTip(_searchToggleBtn, active ? "Cancel search" : "Search");
-
-        // Ensure VM search mode tracks actual text presence so state never drifts.
-        if (hasText && !_vm.IsSearching)
-        {
-            _vm.IsSearching = true;
-        }
-        else if (!hasText && _vm.IsSearching)
-        {
-            _vm.IsSearching = false;
-        }
 
         var navVisible = (active && _vm.CanNavigateSearch) ? Visibility.Visible : Visibility.Collapsed;
         if (_searchPrevBtn is not null)

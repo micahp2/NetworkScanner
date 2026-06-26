@@ -10,6 +10,9 @@ public sealed class HighlightTextBlock : UserControl
 {
     private readonly TextBlock _textBlock;
 
+    private static readonly SolidColorBrush NormalHighlightFg = new(ColorHelper.FromArgb(0xFF, 0x7A, 0xAC, 0xFF));
+    private static readonly SolidColorBrush StrongHighlightFg = new(ColorHelper.FromArgb(0xFF, 0x9B, 0xC3, 0xFF));
+
     public static readonly DependencyProperty FullTextProperty = DependencyProperty.Register(
         nameof(FullText), typeof(string), typeof(HighlightTextBlock),
         new PropertyMetadata(string.Empty, OnHighlightInputChanged));
@@ -48,53 +51,48 @@ public sealed class HighlightTextBlock : UserControl
 
     private static void OnHighlightInputChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
-        ((HighlightTextBlock)d).RebuildInlines();
+        var block = (HighlightTextBlock)d;
+        ApplyHighlight(block._textBlock, block.FullText, block.HighlightText, block.UseStrongHighlight);
     }
 
-    private void RebuildInlines()
+    public static void ApplyHighlight(TextBlock textBlock, string? fullText, string? query, bool useStrongHighlight)
     {
-        _textBlock.Inlines.Clear();
+        textBlock.Inlines.Clear();
 
-        var text = FullText ?? string.Empty;
-        var query = HighlightText ?? string.Empty;
-
+        var text = fullText ?? string.Empty;
         if (string.IsNullOrEmpty(text))
         {
-            _textBlock.Inlines.Add(new Run { Text = string.Empty });
             return;
         }
 
         if (string.IsNullOrWhiteSpace(query))
         {
-            _textBlock.Inlines.Add(new Run { Text = text });
+            textBlock.Inlines.Add(new Run { Text = text });
             return;
         }
 
+        var highlightBrush = useStrongHighlight ? StrongHighlightFg : NormalHighlightFg;
         var idx = 0;
         while (idx < text.Length)
         {
             var hit = text.IndexOf(query, idx, StringComparison.OrdinalIgnoreCase);
             if (hit < 0)
             {
-                _textBlock.Inlines.Add(new Run { Text = text[idx..] });
+                textBlock.Inlines.Add(new Run { Text = text[idx..] });
                 break;
             }
 
             if (hit > idx)
             {
-                _textBlock.Inlines.Add(new Run { Text = text[idx..hit] });
+                textBlock.Inlines.Add(new Run { Text = text[idx..hit] });
             }
 
-            var matchText = text.Substring(hit, query.Length);
-            var run = new Run
+            textBlock.Inlines.Add(new Run
             {
-                Text = matchText,
-                Foreground = UseStrongHighlight
-                    ? new SolidColorBrush(ColorHelper.FromArgb(0xFF, 0x9B, 0xC3, 0xFF))
-                    : new SolidColorBrush(ColorHelper.FromArgb(0xFF, 0x7A, 0xAC, 0xFF)),
+                Text = text.Substring(hit, query.Length),
+                Foreground = highlightBrush,
                 FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
-            };
-            _textBlock.Inlines.Add(run);
+            });
 
             idx = hit + query.Length;
         }

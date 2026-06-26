@@ -50,6 +50,9 @@ public class ScannerViewModel : ObservableObject
     private string _sortColumn = "IPAddress";
     private bool _sortAscending = true;
     private string _lastBackendStatus = "Ready";
+    private readonly List<ScanResultRow> _searchMatches = new();
+    private DispatcherQueueTimer? _searchHighlightTimer;
+    private const int SearchHighlightDebounceMs = 150;
 
     private readonly string _settingsPath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -61,6 +64,14 @@ public class ScannerViewModel : ObservableObject
     {
         _backend = ScannerBackendFactory.Create();
         _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
+        if (_dispatcherQueue is not null)
+        {
+            _searchHighlightTimer = _dispatcherQueue.CreateTimer();
+            _searchHighlightTimer.Interval = TimeSpan.FromMilliseconds(SearchHighlightDebounceMs);
+            _searchHighlightTimer.IsRepeating = false;
+            _searchHighlightTimer.Tick += (_, _) => ApplySearchHighlights();
+        }
+
         PopulateNetworkRanges();
         LoadSettings();
         _dbService = new DatabaseService();
@@ -159,10 +170,7 @@ public class ScannerViewModel : ObservableObject
             {
                 CurrentSearchIndex = -1;
                 SelectedResult = null;
-                ApplySearchHighlights();
-                RaisePropertyChanged(nameof(SearchStatusText));
-                RaisePropertyChanged(nameof(SearchMatchCount));
-                RaisePropertyChanged(nameof(CanNavigateSearch));
+                ScheduleSearchHighlights();
             }
         }
     }
@@ -230,7 +238,17 @@ public class ScannerViewModel : ObservableObject
     public ScanResultRow? SelectedResult
     {
         get => _selectedResult;
-        set => SetProperty(ref _selectedResult, value);
+        set
+        {
+            if (ReferenceEquals(_selectedResult, value)) return;
+
+            var previous = _selectedResult;
+            if (SetProperty(ref _selectedResult, value))
+            {
+                previous?.SetSelectedRow(false);
+                _selectedResult?.SetSelectedRow(true);
+            }
+        }
     }
 
     public bool ResolveDns { get; set; } = true;
@@ -280,21 +298,21 @@ public class ScannerViewModel : ObservableObject
 
     public int CurrentSearchIndex { get; private set; } = -1;
     public int SearchNavigationVersion { get; private set; }
+    public int SearchHighlightVersion { get; private set; }
 
     public string SearchStatusText
     {
         get
         {
-            var matches = MatchingRows().ToList();
             if (string.IsNullOrWhiteSpace(SearchText)) return string.Empty;
-            if (matches.Count == 0) return "No matches";
-            if (CurrentSearchIndex < 0) return $"{matches.Count} matches";
-            return $"{CurrentSearchIndex + 1} / {matches.Count}";
+            if (_searchMatches.Count == 0) return "No matches";
+            if (CurrentSearchIndex < 0) return $"{_searchMatches.Count} matches";
+            return $"{CurrentSearchIndex + 1} / {_searchMatches.Count}";
         }
     }
 
-    public int SearchMatchCount => MatchingRows().Count();
-    public bool CanNavigateSearch => MatchingRows().Any();
+    public int SearchMatchCount => _searchMatches.Count;
+    public bool CanNavigateSearch => _searchMatches.Count > 0;
 
     private void PopulateNetworkRanges()
     {
@@ -893,14 +911,14 @@ public class ScannerViewModel : ObservableObject
 
     private void ToggleSearchState()
     {
+        _searchHighlightTimer?.Stop();
+
         if (IsSearching)
         {
             IsSearching = false;
             ShowFindPanel = false;
             SearchText = string.Empty;
             CurrentSearchIndex = -1;
-            ApplySearchHighlights();
-            RaisePropertyChanged(nameof(SearchStatusText));
             return;
         }
 
@@ -908,85 +926,142 @@ public class ScannerViewModel : ObservableObject
         ShowFindPanel = true;
         CurrentSearchIndex = -1;
         ApplySearchHighlights();
-        RaisePropertyChanged(nameof(SearchStatusText));
     }
 
     private void FindNext()
     {
-        var matches = MatchingRows().ToList();
-        if (matches.Count == 0)
+        if (_searchMatches.Count == 0)
         {
             CurrentSearchIndex = -1;
             SelectedResult = null;
             ApplySearchHighlights();
-            RaisePropertyChanged(nameof(SearchStatusText));
             return;
         }
 
-        CurrentSearchIndex = (CurrentSearchIndex + 1) % matches.Count;
-        SelectedResult = matches[CurrentSearchIndex];
+        CurrentSearchIndex = (CurrentSearchIndex + 1) % _searchMatches.Count;
+        SelectedResult = _searchMatches[CurrentSearchIndex];
+        UpdateSearchNavigationHighlight();
         SearchNavigationVersion++;
         RaisePropertyChanged(nameof(SearchNavigationVersion));
-        ApplySearchHighlights();
-        LogMockAction($"Find next: {matches[CurrentSearchIndex].IPAddress}");
-        RaisePropertyChanged(nameof(SearchStatusText));
+        LogMockAction($"Find next: {_searchMatches[CurrentSearchIndex].IPAddress}");
     }
 
     private void FindPrevious()
     {
-        var matches = MatchingRows().ToList();
-        if (matches.Count == 0)
+        if (_searchMatches.Count == 0)
         {
             CurrentSearchIndex = -1;
             SelectedResult = null;
             ApplySearchHighlights();
-            RaisePropertyChanged(nameof(SearchStatusText));
             return;
         }
 
-        CurrentSearchIndex = (CurrentSearchIndex - 1 + matches.Count) % matches.Count;
-        SelectedResult = matches[CurrentSearchIndex];
+        CurrentSearchIndex = (CurrentSearchIndex - 1 + _searchMatches.Count) % _searchMatches.Count;
+        SelectedResult = _searchMatches[CurrentSearchIndex];
+        UpdateSearchNavigationHighlight();
         SearchNavigationVersion++;
         RaisePropertyChanged(nameof(SearchNavigationVersion));
-        ApplySearchHighlights();
-        LogMockAction($"Find previous: {matches[CurrentSearchIndex].IPAddress}");
-        RaisePropertyChanged(nameof(SearchStatusText));
+        LogMockAction($"Find previous: {_searchMatches[CurrentSearchIndex].IPAddress}");
     }
 
-    private IEnumerable<ScanResultRow> MatchingRows()
+    private void ScheduleSearchHighlights()
     {
         if (string.IsNullOrWhiteSpace(SearchText))
         {
-            return Enumerable.Empty<ScanResultRow>();
+            _searchHighlightTimer?.Stop();
+            ApplySearchHighlights();
+            return;
         }
 
-        return Results.Where(r =>
-            r.IPAddress.Contains(SearchText, StringComparison.OrdinalIgnoreCase) ||
-            r.Hostname.Contains(SearchText, StringComparison.OrdinalIgnoreCase) ||
-            r.MACAddress.Contains(SearchText, StringComparison.OrdinalIgnoreCase) ||
-            r.Vendor.Contains(SearchText, StringComparison.OrdinalIgnoreCase) ||
-            r.OpenPorts.Contains(SearchText, StringComparison.OrdinalIgnoreCase) ||
-            r.IPv6Address.Contains(SearchText, StringComparison.OrdinalIgnoreCase) ||
-            r.CustomName.Contains(SearchText, StringComparison.OrdinalIgnoreCase));
+        if (_searchHighlightTimer is null)
+        {
+            ApplySearchHighlights();
+            return;
+        }
+
+        _searchHighlightTimer.Stop();
+        _searchHighlightTimer.Start();
     }
 
     private void ApplySearchHighlights()
     {
+        var term = SearchText.Trim();
+        _searchMatches.Clear();
+
+        if (string.IsNullOrEmpty(term))
+        {
+            foreach (var row in Results)
+            {
+                ClearRowSearchState(row);
+            }
+
+            NotifySearchStatusChanged();
+            return;
+        }
+
         foreach (var row in Results)
         {
-            row.IsSearchMatch = false;
-            row.IsCurrentSearchHit = false;
-            row.SearchQuery = SearchText;
+            if (RowMatchesTerm(row, term))
+            {
+                _searchMatches.Add(row);
+            }
         }
 
-        var matches = MatchingRows().ToList();
-        for (var i = 0; i < matches.Count; i++)
+        var matchSet = new HashSet<ScanResultRow>(_searchMatches);
+        foreach (var row in Results)
         {
-            var row = matches[i];
-            row.IsSearchMatch = true;
-            row.IsCurrentSearchHit = i == CurrentSearchIndex;
+            if (matchSet.Contains(row))
+            {
+                row.IsSearchMatch = true;
+                row.SearchQuery = term;
+            }
+            else
+            {
+                row.IsSearchMatch = false;
+                row.SearchQuery = string.Empty;
+            }
+
+            row.IsCurrentSearchHit = CurrentSearchIndex >= 0
+                && CurrentSearchIndex < _searchMatches.Count
+                && ReferenceEquals(_searchMatches[CurrentSearchIndex], row);
         }
 
+        NotifySearchStatusChanged();
+    }
+
+    private void UpdateSearchNavigationHighlight()
+    {
+        for (var i = 0; i < _searchMatches.Count; i++)
+        {
+            _searchMatches[i].IsCurrentSearchHit = i == CurrentSearchIndex;
+        }
+
+        NotifySearchStatusChanged();
+    }
+
+    private static void ClearRowSearchState(ScanResultRow row)
+    {
+        row.IsSearchMatch = false;
+        row.IsCurrentSearchHit = false;
+        row.SearchQuery = string.Empty;
+    }
+
+    private static bool RowMatchesTerm(ScanResultRow row, string term)
+    {
+        var comparison = StringComparison.OrdinalIgnoreCase;
+        return row.IPAddress.Contains(term, comparison) ||
+               row.Hostname.Contains(term, comparison) ||
+               row.MACAddress.Contains(term, comparison) ||
+               row.Vendor.Contains(term, comparison) ||
+               row.OpenPorts.Contains(term, comparison) ||
+               row.IPv6Address.Contains(term, comparison) ||
+               row.CustomName.Contains(term, comparison);
+    }
+
+    private void NotifySearchStatusChanged()
+    {
+        SearchHighlightVersion++;
+        RaisePropertyChanged(nameof(SearchHighlightVersion));
         RaisePropertyChanged(nameof(SearchStatusText));
         RaisePropertyChanged(nameof(SearchMatchCount));
         RaisePropertyChanged(nameof(CanNavigateSearch));
@@ -1311,4 +1386,7 @@ public class SaveFileEventArgs : EventArgs
         Content = content;
     }
 }
-
+
+
+
+

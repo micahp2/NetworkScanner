@@ -14,6 +14,7 @@ using Microsoft.UI.Xaml.Input;
 using Windows.Foundation;
 using NetworkScanner.WinUIPrototype.ViewModels;
 using NetworkScanner.WinUIPrototype.Models;
+using NetworkScanner.WinUIPrototype.Common;
 
 namespace NetworkScanner.WinUIPrototype.Pages;
 
@@ -512,7 +513,6 @@ public sealed partial class ScannerPage : Page
         _resultsList.SetBinding(ListView.SelectedItemProperty, new Binding { Path = new PropertyPath("SelectedResult"), Mode = BindingMode.TwoWay });
         _resultsList.ItemContainerStyle = BuildDarkListViewStyle();
         _resultsList.ItemTemplate = BuildTableRowTemplate();
-        _resultsList.SelectionChanged += (_, _) => RefreshVisibleRowVisuals();
         _resultsList.Margin = new Thickness(6, 0, 6, 0);
 
         Grid.SetRow(_resultsList, 1);
@@ -800,7 +800,7 @@ public sealed partial class ScannerPage : Page
     {
         var sb = new System.Text.StringBuilder();
         sb.AppendLine("<DataTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'>");
-        sb.AppendLine("  <Border BorderBrush='#00000000' BorderThickness='0' Padding='0' Margin='0' Background='Transparent'>");
+        sb.AppendLine("  <Border BorderBrush='{Binding SearchRowBorderBrush}' BorderThickness='0' Padding='0' Margin='0' Background='{Binding SearchRowBackground}'>");
         
         var minWidth = _columnWidths.Sum() + 80;
         sb.AppendLine($"    <Grid MinWidth='{minWidth:F0}' Margin='0' Padding='0' Background='Transparent'>");
@@ -822,19 +822,13 @@ public sealed partial class ScannerPage : Page
             switch (key)
             {
                 case "Hostname":
-                    sb.AppendLine($"      <Border Grid.Column='{i}' Tag='Hostname' Background='{{Binding HostnameCellBrush}}' BorderBrush='{borderBrush}' BorderThickness='{thickness}' Padding='6,0' Margin='0'>");
-                    sb.AppendLine("        <TextBlock Tag='Hostname' TextTrimming='CharacterEllipsis' Opacity='0.96' VerticalAlignment='Center'/>");
-                    sb.AppendLine("      </Border>");
+                    AppendTextCell(sb, i, isLast, borderBrush, key, "HostnameCellBrush");
                     break;
                 case "IPAddress":
-                    sb.AppendLine($"      <Border Grid.Column='{i}' Tag='IPAddress' Background='{{Binding IPAddressCellBrush}}' BorderBrush='{borderBrush}' BorderThickness='{thickness}' Padding='6,0' Margin='0'>");
-                    sb.AppendLine("        <TextBlock Tag='IPAddress' TextTrimming='CharacterEllipsis' Opacity='0.94' VerticalAlignment='Center'/>");
-                    sb.AppendLine("      </Border>");
+                    AppendTextCell(sb, i, isLast, borderBrush, key, "IPAddressCellBrush");
                     break;
                 case "MACAddress":
-                    sb.AppendLine($"      <Border Grid.Column='{i}' Tag='MACAddress' Background='{{Binding MACAddressCellBrush}}' BorderBrush='{borderBrush}' BorderThickness='{thickness}' Padding='6,0' Margin='0'>");
-                    sb.AppendLine("        <TextBlock Tag='MACAddress' TextTrimming='CharacterEllipsis' Opacity='0.94' VerticalAlignment='Center'/>");
-                    sb.AppendLine("      </Border>");
+                    AppendTextCell(sb, i, isLast, borderBrush, key, "MACAddressCellBrush");
                     break;
                 case "StateLabel":
                     sb.AppendLine($"      <Border Grid.Column='{i}' Tag='StateLabel' Background='{{Binding StatusCellBrush}}' BorderBrush='{borderBrush}' BorderThickness='{thickness}' Padding='6,0' Margin='0'>");
@@ -842,34 +836,22 @@ public sealed partial class ScannerPage : Page
                     sb.AppendLine("      </Border>");
                     break;
                 case "FirstSeen":
-                    sb.AppendLine($"      <Border Grid.Column='{i}' Tag='FirstSeen' Background='{{Binding FirstSeenCellBrush}}' BorderBrush='{borderBrush}' BorderThickness='{thickness}' Padding='6,0' Margin='0'>");
-                    sb.AppendLine("        <TextBlock Tag='FirstSeen' TextTrimming='CharacterEllipsis' Opacity='0.94' VerticalAlignment='Center'/>");
-                    sb.AppendLine("      </Border>");
+                    AppendTextCell(sb, i, isLast, borderBrush, key, "FirstSeenCellBrush");
                     break;
                 case "LastSeen":
-                    sb.AppendLine($"      <Border Grid.Column='{i}' Tag='LastSeen' Background='{{Binding LastSeenCellBrush}}' BorderBrush='{borderBrush}' BorderThickness='{thickness}' Padding='6,0' Margin='0'>");
-                    sb.AppendLine("        <TextBlock Tag='LastSeen' TextTrimming='CharacterEllipsis' Opacity='0.94' VerticalAlignment='Center'/>");
-                    sb.AppendLine("      </Border>");
+                    AppendTextCell(sb, i, isLast, borderBrush, key, "LastSeenCellBrush");
                     break;
                 case "Vendor":
-                    sb.AppendLine($"      <Border Grid.Column='{i}' Tag='Vendor' Background='{{Binding VendorCellBrush}}' BorderBrush='{borderBrush}' BorderThickness='{thickness}' Padding='6,0' Margin='0'>");
-                    sb.AppendLine("        <TextBlock Tag='Vendor' TextTrimming='CharacterEllipsis' Opacity='0.94' VerticalAlignment='Center'/>");
-                    sb.AppendLine("      </Border>");
+                    AppendTextCell(sb, i, isLast, borderBrush, key, "VendorCellBrush");
                     break;
                 case "OpenPorts":
-                    sb.AppendLine($"      <Border Grid.Column='{i}' Tag='OpenPorts' Background='{{Binding OpenPortsCellBrush}}' BorderBrush='{borderBrush}' BorderThickness='{thickness}' Padding='6,0' Margin='0'>");
-                    sb.AppendLine("        <TextBlock Tag='OpenPorts' TextTrimming='CharacterEllipsis' Opacity='0.94' VerticalAlignment='Center'/>");
-                    sb.AppendLine("      </Border>");
+                    AppendTextCell(sb, i, isLast, borderBrush, key, "OpenPortsCellBrush");
                     break;
                 case "CustomName":
-                    sb.AppendLine($"      <Border Grid.Column='{i}' Tag='CustomName' Background='{{Binding CustomNameCellBrush}}' BorderBrush='{borderBrush}' BorderThickness='{thickness}' Padding='6,0' Margin='0'>");
-                    sb.AppendLine("        <TextBlock Tag='CustomName' TextTrimming='CharacterEllipsis' Opacity='0.94' VerticalAlignment='Center'/>");
-                    sb.AppendLine("      </Border>");
+                    AppendTextCell(sb, i, isLast, borderBrush, key, "CustomNameCellBrush");
                     break;
                 case "IPv6Address":
-                    sb.AppendLine($"      <Border Grid.Column='{i}' Tag='IPv6Address' Background='{{Binding IPv6AddressCellBrush}}' BorderBrush='{borderBrush}' BorderThickness='{thickness}' Padding='6,0' Margin='0'>");
-                    sb.AppendLine("        <TextBlock Tag='IPv6Address' TextTrimming='CharacterEllipsis' Opacity='0.94' VerticalAlignment='Center'/>");
-                    sb.AppendLine("      </Border>");
+                    AppendTextCell(sb, i, isLast, borderBrush, key, "IPv6AddressCellBrush");
                     break;
             }
         }
@@ -881,6 +863,16 @@ public sealed partial class ScannerPage : Page
         return (DataTemplate)Microsoft.UI.Xaml.Markup.XamlReader.Load(sb.ToString());
     }
 
+    private static void AppendTextCell(System.Text.StringBuilder sb, int column, bool isLast, string borderBrush, string tag, string cellBrush)
+    {
+        var thickness = isLast ? "0" : "0,0,1,0";
+        var opacity = string.Equals(tag, "Hostname", StringComparison.Ordinal) ? "0.96" : "0.94";
+
+        sb.AppendLine($"      <Border Grid.Column='{column}' Tag='{tag}' Background='{{Binding {cellBrush}}}' BorderBrush='{borderBrush}' BorderThickness='{thickness}' Padding='6,0' Margin='0'>");
+        sb.AppendLine($"        <TextBlock Tag='{tag}' TextTrimming='CharacterEllipsis' Opacity='{opacity}' VerticalAlignment='Center'/>");
+        sb.AppendLine("      </Border>");
+    }
+
 
 
     private void OnLoaded(object sender, RoutedEventArgs e)
@@ -890,7 +882,6 @@ public sealed partial class ScannerPage : Page
         SyncFindPanel();
         UpdateSortHeaderIndicators();
         UpdateScanActionVisual();
-        RefreshVisibleRowVisuals();
 
         // Prevent bright initial focus ring on toolbar actions in dark mode.
         Focus(FocusState.Programmatic);
@@ -903,25 +894,10 @@ public sealed partial class ScannerPage : Page
 
         var rootBorder = container.ContentTemplateRoot as Border
             ?? FindDescendant<Border>(container);
-        if (rootBorder is null) return;
-
-        // Do not apply custom row background highlight here.
-        // Current search focus is represented by list selection + text highlight only.
-        var rowSelected = ReferenceEquals(row, ViewModel.SelectedResult) || row.IsCurrentSearchHit;
-        if (rowSelected)
+        if (rootBorder is not null)
         {
-            rootBorder.Background = Brush(0x66, 0x2E, 0x7D, 0xFF);
-            rootBorder.BorderBrush = Brush(0xFF, 0x2E, 0x7D, 0xFF);
-            rootBorder.BorderThickness = new Thickness(0);
+            ApplyTextMatchHighlight(rootBorder, row);
         }
-        else
-        {
-            rootBorder.Background = Brush(0x00, 0x00, 0x00, 0x00);
-            rootBorder.BorderBrush = Brush(0x00, 0x00, 0x00, 0x00);
-            rootBorder.BorderThickness = new Thickness(0);
-        }
-
-        ApplyTextMatchHighlight(rootBorder, row);
 
         if (container.ContextFlyout == null)
         {
@@ -944,7 +920,7 @@ public sealed partial class ScannerPage : Page
         }
     }
 
-    private void RefreshVisibleRowVisuals()
+    private void RefreshRealizedSearchHighlights()
     {
         if (_resultsList is null) return;
 
@@ -957,94 +933,35 @@ public sealed partial class ScannerPage : Page
                 ?? FindDescendant<Border>(container);
             if (rootBorder is null) continue;
 
-            ApplyRowChrome(rootBorder, container, row);
             ApplyTextMatchHighlight(rootBorder, row);
         }
     }
 
-    private void ApplyRowChrome(Border rootBorder, ListViewItem container, ScanResultRow row)
-    {
-        var isSelected = container.IsSelected || ReferenceEquals(row, ViewModel.SelectedResult);
-        if (isSelected)
-        {
-            rootBorder.Background = Brush(0x66, 0x2E, 0x7D, 0xFF);
-            rootBorder.BorderBrush = Brush(0xCC, 0x8C, 0xA8, 0xFF);
-            rootBorder.BorderThickness = new Thickness(0);
-            return;
-        }
-
-        if (row.IsSearchMatch)
-        {
-            rootBorder.Background = Brush(0x22, 0x2E, 0x7D, 0xFF);
-            rootBorder.BorderBrush = Brush(0x44, 0x8C, 0xA8, 0xFF);
-            rootBorder.BorderThickness = new Thickness(0);
-            return;
-        }
-
-        rootBorder.Background = Brush(0x00, 0x00, 0x00, 0x00);
-        rootBorder.BorderBrush = Brush(0x00, 0x00, 0x00, 0x00);
-        rootBorder.BorderThickness = new Thickness(0);
-    }
-
     private void ApplyTextMatchHighlight(FrameworkElement root, ScanResultRow row)
     {
-        var query = ViewModel.SearchText?.Trim();
-        var isCurrent = ReferenceEquals(row, ViewModel.SelectedResult) || row.IsCurrentSearchHit;
-        var isMatch = row.IsSearchMatch;
+        var query = row.IsSearchMatch ? row.SearchQuery : null;
+        var strong = row.IsCurrentSearchHit;
 
-        HighlightTextByTag(root, "Hostname", row.Hostname, query, isMatch, isCurrent);
-        HighlightTextByTag(root, "IPAddress", row.IPAddress, query, isMatch, isCurrent);
-        HighlightTextByTag(root, "MACAddress", row.MACAddress, query, isMatch, isCurrent);
-        HighlightTextByTag(root, "FirstSeen", row.FirstSeen?.ToString("yyyy-MM-dd HH:mm") ?? string.Empty, query, isMatch, isCurrent);
-        HighlightTextByTag(root, "LastSeen", row.LastSeen?.ToString("yyyy-MM-dd HH:mm") ?? string.Empty, query, isMatch, isCurrent);
-        HighlightTextByTag(root, "Vendor", row.Vendor, query, isMatch, isCurrent);
-        HighlightTextByTag(root, "OpenPorts", row.OpenPorts ?? string.Empty, query, isMatch, isCurrent);
-        HighlightTextByTag(root, "CustomName", row.CustomName ?? string.Empty, query, isMatch, isCurrent);
-        HighlightTextByTag(root, "IPv6Address", row.IPv6Address ?? string.Empty, query, isMatch, isCurrent);
+        HighlightTextByTag(root, "Hostname", row.Hostname, query, strong);
+        HighlightTextByTag(root, "IPAddress", row.IPAddress, query, strong);
+        HighlightTextByTag(root, "MACAddress", row.MACAddress, query, strong);
+        HighlightTextByTag(root, "FirstSeen", row.FirstSeenText, query, strong);
+        HighlightTextByTag(root, "LastSeen", row.LastSeenText, query, strong);
+        HighlightTextByTag(root, "Vendor", row.Vendor, query, strong);
+        HighlightTextByTag(root, "OpenPorts", row.OpenPorts ?? string.Empty, query, strong);
+        HighlightTextByTag(root, "CustomName", row.CustomName ?? string.Empty, query, strong);
+        HighlightTextByTag(root, "IPv6Address", row.IPv6Address ?? string.Empty, query, strong);
     }
 
-    private void HighlightTextByTag(FrameworkElement root, string tag, string fullText, string? query, bool isMatch, bool strong)
+    private static void HighlightTextByTag(FrameworkElement root, string tag, string fullText, string? query, bool strong)
     {
         var tb = FindTaggedTextBlock(root, tag);
         if (tb is null) return;
 
-        tb.Text = fullText ?? string.Empty;
-        tb.TextHighlighters.Clear();
-        tb.Foreground = Brush(0xFF, 0xF2, 0xF2, 0xF4);
-        tb.FontWeight = FontWeights.Normal;
-
-        if (!isMatch || string.IsNullOrWhiteSpace(query) || string.IsNullOrEmpty(fullText))
-        {
-            return;
-        }
-
-        var idx = 0;
-        var matched = false;
-        while (idx < fullText.Length)
-        {
-            var hit = fullText.IndexOf(query, idx, StringComparison.OrdinalIgnoreCase);
-            if (hit < 0) break;
-
-            matched = true;
-
-            var hl = new TextHighlighter
-            {
-                Foreground = Brush(0xFF, 0xE6, 0xF1, 0xFF),
-                Background = Brush(0x80, 0x4A, 0x8D, 0xF7)
-            };
-            hl.Ranges.Add(new TextRange { StartIndex = hit, Length = query.Length });
-            tb.TextHighlighters.Add(hl);
-
-            idx = hit + query.Length;
-        }
-
-        if (matched)
-        {
-            tb.FontWeight = FontWeights.SemiBold;
-        }
+        HighlightTextBlock.ApplyHighlight(tb, fullText, query, strong);
     }
 
-    private TextBlock? FindTaggedTextBlock(DependencyObject root, string tag)
+    private static TextBlock? FindTaggedTextBlock(DependencyObject root, string tag)
     {
         if (root is TextBlock tb && string.Equals(tb.Tag as string, tag, StringComparison.Ordinal))
         {
@@ -1121,11 +1038,6 @@ public sealed partial class ScannerPage : Page
         if (e.PropertyName is nameof(ScannerViewModel.ShowFindPanel) or nameof(ScannerViewModel.IsSearching) or nameof(ScannerViewModel.SearchText))
         {
             SyncFindPanel();
-            if (_resultsList is not null)
-            {
-                _resultsList.UpdateLayout();
-                RefreshVisibleRowVisuals();
-            }
         }
 
         // Scope summary is composed from range + ports
@@ -1140,8 +1052,6 @@ public sealed partial class ScannerPage : Page
             if (_resultsList is not null)
             {
                 _resultsList.ItemTemplate = BuildTableRowTemplate();
-                _resultsList.UpdateLayout();
-                RefreshVisibleRowVisuals();
             }
         }
 
@@ -1150,15 +1060,15 @@ public sealed partial class ScannerPage : Page
             UpdateScanActionVisual();
         }
 
-        if (e.PropertyName == nameof(ScannerViewModel.SelectedResult))
+        if (e.PropertyName == nameof(ScannerViewModel.SearchHighlightVersion))
         {
-            RefreshVisibleRowVisuals();
+            RefreshRealizedSearchHighlights();
         }
 
         if (e.PropertyName == nameof(ScannerViewModel.SearchNavigationVersion))
         {
             ScrollToSelectedResult();
-            RefreshVisibleRowVisuals();
+            RefreshRealizedSearchHighlights();
         }
     }
 
@@ -2004,4 +1914,4 @@ public sealed partial class ScannerPage : Page
 
 
 
-
+
