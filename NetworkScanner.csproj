@@ -22,6 +22,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Remove="NetworkScanner.Tests\**" />
+    <Page Remove="NetworkScanner.Tests\**" />
+    <None Remove="NetworkScanner.Tests\**" />
+    <EmbeddedResource Remove="NetworkScanner.Tests\**" />
     <Compile Remove="DiagnosticDump\**" />
     <Compile Remove="NetworkScanner.WinUIPrototype\**\*.cs" />
     <Page Remove="NetworkScanner.WinUIPrototype\**\*.xaml" />

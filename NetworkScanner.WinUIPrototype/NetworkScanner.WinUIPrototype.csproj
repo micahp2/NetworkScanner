@@ -50,5 +50,6 @@
     <Compile Include="..\services\IPHelperAPI.cs" Link="Core\Services\IPHelperAPI.cs" />
     <Compile Include="..\services\DatabaseService.cs" Link="Core\Services\DatabaseService.cs" />
     <Compile Include="..\services\NetworkScannerService.cs" Link="Core\Services\NetworkScannerService.cs" />
+    <Compile Include="..\Core\NetworkScannerUtils.cs" Link="Core\NetworkScannerUtils.cs" />
   </ItemGroup>
 </Project>
