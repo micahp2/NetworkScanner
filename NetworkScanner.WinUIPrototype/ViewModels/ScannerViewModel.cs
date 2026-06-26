@@ -24,12 +24,15 @@ public enum ScanLifecycleState
 
 public class ScannerViewModel : ObservableObject
 {
+    public event Func<object, SaveFileEventArgs, Task>? SaveFileRequested;
+
     private readonly Random _random = new();
     private readonly ObservableCollection<string> _scanStateTransitions = new();
     private readonly IScannerBackend _backend;
     private readonly DispatcherQueue? _dispatcherQueue;
     private readonly DatabaseService _dbService;
     private readonly HashSet<string> _resultIPIndex = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<ScanResultRow> _allResults = new();
     private CancellationTokenSource? _scanCts;
 
     private string _ipRanges = string.Empty;
@@ -48,11 +51,18 @@ public class ScannerViewModel : ObservableObject
     private bool _sortAscending = true;
     private string _lastBackendStatus = "Ready";
 
+    private readonly string _settingsPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "NetworkScanner",
+        "scope-settings-winui.json"
+    );
+
     public ScannerViewModel()
     {
         _backend = ScannerBackendFactory.Create();
         _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
         PopulateNetworkRanges();
+        LoadSettings();
         _dbService = new DatabaseService();
         _ = _dbService.InitializeAsync();
         Results = new ObservableCollection<ScanResultRow>();
@@ -74,14 +84,14 @@ public class ScannerViewModel : ObservableObject
 
         StartStopScanCommand = new RelayCommand(async () => await StartStopScanAsync());
         ClearCommand = new RelayCommand(ClearResults);
-        ExportCommand = new RelayCommand(ExportMock);
+        ExportCommand = new RelayCommand(async () => await ExportCsvAsync());
         ToggleFindCommand = new RelayCommand(ToggleSearchState);
         FindNextCommand = new RelayCommand(FindNext);
         FindPreviousCommand = new RelayCommand(FindPrevious);
 
-        CopyFieldCommand = new RelayCommand(p => LogMockAction($"Copy: {p}"));
-        BrowsePortCommand = new RelayCommand(p => LogMockAction($"Browse: {p}"));
-        ShellCommand = new RelayCommand(p => LogMockAction($"Shell: {p}"));
+        CopyFieldCommand = new RelayCommand(ExecuteCopyField);
+        BrowsePortCommand = new RelayCommand(ExecuteBrowsePort);
+        ShellCommand = new RelayCommand(ExecuteShell);
 
         if (string.Equals(_backend.Name, "Mock", StringComparison.OrdinalIgnoreCase))
         {
@@ -93,6 +103,18 @@ public class ScannerViewModel : ObservableObject
         }
         ApplySortColumnHighlights();
         RefreshStatus();
+
+        PropertyChanged += (s, e) =>
+        {
+            if (e.PropertyName is nameof(IPRanges) or nameof(Ports) or nameof(ScanIPv6) or nameof(ShowOffline) or nameof(ShowCached) or nameof(PeriodicScanEnabled) or nameof(PeriodicScanIntervalMinutes))
+            {
+                SaveSettings();
+            }
+            if (e.PropertyName is nameof(ShowOffline) or nameof(ShowCached))
+            {
+                RunOnUi(RefreshFilteredResults);
+            }
+        };
     }
 
     public ObservableCollection<string> DetectedRanges { get; } = new();
@@ -218,6 +240,21 @@ public class ScannerViewModel : ObservableObject
     public bool ScanIPv6 { get; set; }
     public int PingTimeoutMs { get; set; } = 3000;
     public int PortTimeoutMs { get; set; } = 1500;
+
+    private bool _showOffline = true;
+    private bool _showCached = true;
+
+    public bool ShowOffline
+    {
+        get => _showOffline;
+        set => SetProperty(ref _showOffline, value);
+    }
+
+    public bool ShowCached
+    {
+        get => _showCached;
+        set => SetProperty(ref _showCached, value);
+    }
 
     private bool _periodicScanEnabled;
     private int _periodicScanIntervalMinutes = 5;
@@ -391,11 +428,12 @@ public class ScannerViewModel : ObservableObject
 
             RunOnUi(() =>
             {
-                foreach (var r in Results)
+                foreach (var r in _allResults)
                 {
                     r.IsOnline = false;
                     r.IsCached = true;
                 }
+                RefreshFilteredResults();
                 UpdateStatusWithCounts("Building scan list...");
             });
 
@@ -409,7 +447,7 @@ public class ScannerViewModel : ObservableObject
                 token,
                 onHostFound: row => RunOnUi(() =>
                 {
-                    var existing = Results.FirstOrDefault(r => string.Equals(r.IPAddress, row.IPAddress, StringComparison.OrdinalIgnoreCase));
+                    var existing = _allResults.FirstOrDefault(r => string.Equals(r.IPAddress, row.IPAddress, StringComparison.OrdinalIgnoreCase));
                     var now = DateTimeOffset.Now;
 
                     ScanResultRow persistTarget;
@@ -421,7 +459,7 @@ public class ScannerViewModel : ObservableObject
                         row.FirstSeen ??= now;
                         row.LastSeen ??= now;
                         row.SetSortedColumn(_sortColumn);
-                        Results.Add(row);
+                        _allResults.Add(row);
                         _resultIPIndex.Add(row.IPAddress);
                         persistTarget = row;
                     }
@@ -443,11 +481,7 @@ public class ScannerViewModel : ObservableObject
 
                     _ = PersistDeviceAsync(persistTarget);
 
-                    if (!string.IsNullOrEmpty(SearchText))
-                    {
-                        ApplySearchHighlights();
-                    }
-                    UpdateStatusWithCounts();
+                    RefreshFilteredResults();
                 }),
                 onStatus: status => RunOnUi(() =>
                 {
@@ -603,6 +637,7 @@ public class ScannerViewModel : ObservableObject
 
     private void ClearResults()
     {
+        _allResults.Clear();
         Results.Clear();
         CurrentSearchIndex = -1;
         ApplySortColumnHighlights();
@@ -611,16 +646,183 @@ public class ScannerViewModel : ObservableObject
         StatusText = "Ready";
     }
 
-    private void ExportMock()
+    private async Task ExportCsvAsync()
     {
-        var csv = new StringBuilder();
-        csv.AppendLine("IP Address,Hostname,MAC Address,Vendor,Open Ports,IPv6 Address");
-        foreach (var row in Results)
+        if (Results.Count == 0)
         {
-            csv.AppendLine($"\"{row.IPAddress}\",\"{row.Hostname}\",\"{row.MACAddress}\",\"{row.Vendor}\",\"{row.OpenPorts}\",\"{row.IPv6Address}\"");
+            LogMockAction("No results to export.");
+            return;
         }
 
-        LogMockAction($"Exported {Results.Count} row(s) to CSV.\nPreview length: {csv.Length} chars.");
+        var csv = new StringBuilder();
+        csv.AppendLine("IP Address,Hostname,MAC Address,Vendor,Open Ports,IPv6 Address,Custom Name,First Seen,Last Seen,Status");
+        foreach (var row in Results)
+        {
+            csv.AppendLine($"\"{row.IPAddress}\",\"{row.Hostname}\",\"{row.MACAddress}\",\"{row.Vendor}\",\"{row.OpenPorts}\",\"{row.IPv6Address}\",\"{row.CustomName}\",\"{row.FirstSeen}\",\"{row.LastSeen}\",\"{row.StateLabel}\"");
+        }
+
+        var defaultName = $"NetworkScan_{DateTime.Now:yyyyMMdd_HHmmss}.csv";
+        var args = new SaveFileEventArgs(defaultName, ".csv", csv.ToString());
+        
+        if (SaveFileRequested != null)
+        {
+            await SaveFileRequested.Invoke(this, args);
+        }
+
+        if (args.ResultFilePath != null)
+        {
+            LogMockAction($"Exported {Results.Count} row(s) to CSV: {args.ResultFilePath}");
+        }
+        else
+        {
+            LogMockAction("CSV export cancelled.");
+        }
+    }
+
+    private void ExecuteBrowsePort(object? parameter)
+    {
+        if (parameter is not string paramStr) return;
+
+        string? url = null;
+        if (paramStr.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || 
+            paramStr.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            url = paramStr;
+        }
+        else if (SelectedResult != null)
+        {
+            var match = System.Text.RegularExpressions.Regex.Match(paramStr, @"(\d+)");
+            if (match.Success && int.TryParse(match.Value, out var port))
+            {
+                var scheme = paramStr.Contains("https", StringComparison.OrdinalIgnoreCase) || port is 443 or 8443 or 9443 ? "https" : "http";
+                url = $"{scheme}://{SelectedResult.IPAddress}:{port}";
+            }
+        }
+
+        if (!string.IsNullOrEmpty(url))
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+                LogMockAction($"Browsed to {url}");
+            }
+            catch (Exception ex)
+            {
+                LogMockAction($"Error browsing to {url}: {ex.Message}");
+            }
+        }
+    }
+
+    private void ExecuteShell(object? parameter)
+    {
+        if (SelectedResult == null) return;
+
+        var paramStr = parameter as string ?? "";
+        var ip = SelectedResult.IPAddress;
+
+        if (paramStr.Contains("RDP", StringComparison.OrdinalIgnoreCase) || paramStr.Contains("3389"))
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("mstsc", $"/v:{ip}") { UseShellExecute = true });
+                LogMockAction($"Launched RDP to {ip}");
+            }
+            catch (Exception ex)
+            {
+                LogMockAction($"Error launching RDP: {ex.Message}");
+            }
+        }
+        else
+        {
+            string? protocol = null;
+            int port = 0;
+
+            if (paramStr.Contains("SSH", StringComparison.OrdinalIgnoreCase) || paramStr.Contains("22"))
+            {
+                protocol = "ssh";
+                port = 22;
+            }
+            else
+            {
+                var match = System.Text.RegularExpressions.Regex.Match(paramStr, @"(\d+)");
+                if (match.Success)
+                {
+                    int.TryParse(match.Value, out port);
+                }
+            }
+
+            try
+            {
+                string cmd = protocol switch
+                {
+                    "ssh" => $"ssh {ip}",
+                    _     => port > 0 ? $"# {ip}:{port}" : $"# {ip}",
+                };
+
+                if (TryLaunch("wt.exe", $"new-tab -- powershell -NoExit -Command \"{cmd}\""))
+                {
+                    LogMockAction($"Launched WT session: {cmd}");
+                    return;
+                }
+                if (TryLaunch("powershell.exe", $"-NoExit -Command \"{cmd}\""))
+                {
+                    LogMockAction($"Launched PowerShell session: {cmd}");
+                    return;
+                }
+                if (TryLaunch("cmd.exe", $"/k echo {cmd}"))
+                {
+                    LogMockAction($"Launched CMD session: {cmd}");
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                LogMockAction($"Error launching shell: {ex.Message}");
+            }
+        }
+    }
+
+    private static bool TryLaunch(string exe, string args)
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(exe, args) { UseShellExecute = true });
+            return true;
+        }
+        catch { return false; }
+    }
+
+    private void ExecuteCopyField(object? parameter)
+    {
+        if (SelectedResult == null || parameter is not string fieldName) return;
+
+        string? val = fieldName.ToLowerInvariant() switch
+        {
+            "ip" or "ip address" => SelectedResult.IPAddress,
+            "hostname" => SelectedResult.Hostname,
+            "mac" or "mac address" => SelectedResult.MACAddress,
+            "vendor" => SelectedResult.Vendor,
+            "open ports" => SelectedResult.OpenPorts,
+            "ipv6" or "ipv6 address" => SelectedResult.IPv6Address,
+            "custom name" => SelectedResult.CustomName,
+            _ => null
+        };
+
+        if (!string.IsNullOrEmpty(val))
+        {
+            try
+            {
+                var package = new Windows.ApplicationModel.DataTransfer.DataPackage();
+                package.SetText(val);
+                Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(package);
+                Windows.ApplicationModel.DataTransfer.Clipboard.Flush();
+                LogMockAction($"Copied {fieldName}: {val}");
+            }
+            catch (Exception ex)
+            {
+                LogMockAction($"Failed to copy to clipboard: {ex.Message}");
+            }
+        }
     }
 
 
@@ -670,9 +872,9 @@ public class ScannerViewModel : ObservableObject
             _lastBackendStatus = phase;
         }
 
-        var live = Results.Count(r => !r.IsCached);
-        var cached = Results.Count(r => r.IsCached);
-        var total = Results.Count;
+        var live = _allResults.Count(r => !r.IsCached);
+        var cached = _allResults.Count(r => r.IsCached);
+        var total = _allResults.Count;
 
         var prefix = string.IsNullOrWhiteSpace(_lastBackendStatus) ? "Ready" : _lastBackendStatus;
         StatusText = $"{prefix} | Live: {live} | Cached: {cached} | Total: {total}";
@@ -802,7 +1004,7 @@ public class ScannerViewModel : ObservableObject
     {
         var now = DateTimeOffset.Now;
 
-        Results.Add(new ScanResultRow
+        _allResults.Add(new ScanResultRow
         {
             IsOnline = true,
             IsCached = true,
@@ -817,7 +1019,7 @@ public class ScannerViewModel : ObservableObject
             IPv6Address = "fd00::b827:ebff:fe55:1299"
         });
 
-        Results.Add(new ScanResultRow
+        _allResults.Add(new ScanResultRow
         {
             IsOnline = false,
             IsCached = true,
@@ -831,6 +1033,8 @@ public class ScannerViewModel : ObservableObject
             OpenPorts = "80, 9100",
             IPv6Address = string.Empty
         });
+
+        RefreshFilteredResults();
     }
 
     private async Task LoadCachedDevicesAsync()
@@ -849,7 +1053,7 @@ public class ScannerViewModel : ObservableObject
                     if (!_resultIPIndex.Add(d.IPAddress))
                         continue;
 
-                    Results.Add(new ScanResultRow
+                    _allResults.Add(new ScanResultRow
                     {
                         IsOnline = false,
                         IsCached = true,
@@ -865,8 +1069,7 @@ public class ScannerViewModel : ObservableObject
                     });
                 }
 
-                ApplySortColumnHighlights();
-                ApplySearchHighlights();
+                RefreshFilteredResults();
                 UpdateStatusWithCounts("Ready");
             });
         }
@@ -942,9 +1145,9 @@ public class ScannerViewModel : ObservableObject
     }
     private void RefreshStatus()
     {
-        var live = Results.Count(r => !r.IsCached);
-        var cached = Results.Count(r => r.IsCached);
-        StatusText = $"Live: {live} | Cached: {cached} | Total: {Results.Count}";
+        var live = _allResults.Count(r => !r.IsCached);
+        var cached = _allResults.Count(r => r.IsCached);
+        StatusText = $"Live: {live} | Cached: {cached} | Total: {_allResults.Count}";
     }
 
     private void LogMockAction(string message)
@@ -975,30 +1178,137 @@ public class ScannerViewModel : ObservableObject
         RaisePropertyChanged(nameof(CurrentSortColumn));
         RaisePropertyChanged(nameof(IsSortAscending));
 
-        IEnumerable<ScanResultRow> ordered = columnKey switch
+        RefreshFilteredResults();
+    }
+
+    private void RefreshFilteredResults()
+    {
+        var filtered = _allResults.Where(r =>
         {
-            "Hostname" => _sortAscending ? Results.OrderBy(r => r.Hostname) : Results.OrderByDescending(r => r.Hostname),
-            "IPAddress" => _sortAscending ? Results.OrderBy(r => IPv4SortKey(r.IPAddress)).ThenBy(r => r.IPAddress, StringComparer.OrdinalIgnoreCase) : Results.OrderByDescending(r => IPv4SortKey(r.IPAddress)).ThenByDescending(r => r.IPAddress, StringComparer.OrdinalIgnoreCase),
-            "MACAddress" => _sortAscending ? Results.OrderBy(r => r.MACAddress) : Results.OrderByDescending(r => r.MACAddress),
-            "StateLabel" => _sortAscending ? Results.OrderBy(r => r.StateLabel) : Results.OrderByDescending(r => r.StateLabel),
-            "Vendor" => _sortAscending ? Results.OrderBy(r => r.Vendor) : Results.OrderByDescending(r => r.Vendor),
-            "FirstSeen" => _sortAscending ? Results.OrderBy(r => r.FirstSeen) : Results.OrderByDescending(r => r.FirstSeen),
-            "LastSeen" => _sortAscending ? Results.OrderBy(r => r.LastSeen) : Results.OrderByDescending(r => r.LastSeen),
-            "OpenPorts" => _sortAscending ? Results.OrderBy(r => r.OpenPorts) : Results.OrderByDescending(r => r.OpenPorts),
-            "CustomName" => _sortAscending ? Results.OrderBy(r => r.CustomName) : Results.OrderByDescending(r => r.CustomName),
-            "IPv6Address" => _sortAscending ? Results.OrderBy(r => r.IPv6Address) : Results.OrderByDescending(r => r.IPv6Address),
-            _ => _sortAscending ? Results.OrderBy(r => r.IPAddress) : Results.OrderByDescending(r => r.IPAddress)
+            if (!NetworkScanner.Core.NetworkScannerUtils.IsIpInRanges(r.IPAddress, IPRanges)) return false;
+            if (r.IsCached) return ShowCached;
+            if (!r.IsOnline) return ShowOffline;
+            return true;
+        });
+
+        // Apply active sorting dynamically
+        IEnumerable<ScanResultRow> ordered = _sortColumn switch
+        {
+            "Hostname" => _sortAscending ? filtered.OrderBy(r => r.Hostname) : filtered.OrderByDescending(r => r.Hostname),
+            "IPAddress" => _sortAscending ? filtered.OrderBy(r => IPv4SortKey(r.IPAddress)).ThenBy(r => r.IPAddress, StringComparer.OrdinalIgnoreCase) : filtered.OrderByDescending(r => IPv4SortKey(r.IPAddress)).ThenByDescending(r => r.IPAddress, StringComparer.OrdinalIgnoreCase),
+            "MACAddress" => _sortAscending ? filtered.OrderBy(r => r.MACAddress) : filtered.OrderByDescending(r => r.MACAddress),
+            "StateLabel" => _sortAscending ? filtered.OrderBy(r => r.StateLabel) : filtered.OrderByDescending(r => r.StateLabel),
+            "Vendor" => _sortAscending ? filtered.OrderBy(r => r.Vendor) : filtered.OrderByDescending(r => r.Vendor),
+            "FirstSeen" => _sortAscending ? filtered.OrderBy(r => r.FirstSeen) : filtered.OrderByDescending(r => r.FirstSeen),
+            "LastSeen" => _sortAscending ? filtered.OrderBy(r => r.LastSeen) : filtered.OrderByDescending(r => r.LastSeen),
+            "OpenPorts" => _sortAscending ? filtered.OrderBy(r => r.OpenPorts) : filtered.OrderByDescending(r => r.OpenPorts),
+            "CustomName" => _sortAscending ? filtered.OrderBy(r => r.CustomName) : filtered.OrderByDescending(r => r.CustomName),
+            "IPv6Address" => _sortAscending ? filtered.OrderBy(r => r.IPv6Address) : filtered.OrderByDescending(r => r.IPv6Address),
+            _ => _sortAscending ? filtered.OrderBy(r => r.IPAddress) : filtered.OrderByDescending(r => r.IPAddress)
         };
 
-        var snapshot = ordered.ToList();
+        var selected = SelectedResult;
+
         Results.Clear();
-        foreach (var row in snapshot)
+        foreach (var item in ordered)
         {
-            Results.Add(row);
+            Results.Add(item);
+        }
+
+        if (selected != null && Results.Contains(selected))
+        {
+            SelectedResult = selected;
+        }
+        else
+        {
+            SelectedResult = null;
         }
 
         ApplySortColumnHighlights();
         ApplySearchHighlights();
+        UpdateStatusWithCounts();
+    }
+
+    private void SaveSettings()
+    {
+        try
+        {
+            var settings = new ScannerScopeSettings
+            {
+                IPRanges = IPRanges,
+                Ports = Ports,
+                ScanIPv6 = ScanIPv6,
+                ShowOffline = ShowOffline,
+                ShowCached = ShowCached,
+                PeriodicScanEnabled = PeriodicScanEnabled,
+                PeriodicScanIntervalMinutes = PeriodicScanIntervalMinutes
+            };
+
+            var dir = Path.GetDirectoryName(_settingsPath);
+            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
+
+            var json = System.Text.Json.JsonSerializer.Serialize(settings);
+            File.WriteAllText(_settingsPath, json);
+        }
+        catch
+        {
+            // ignore
+        }
+    }
+
+    private void LoadSettings()
+    {
+        try
+        {
+            if (File.Exists(_settingsPath))
+            {
+                var json = File.ReadAllText(_settingsPath);
+                var settings = System.Text.Json.JsonSerializer.Deserialize<ScannerScopeSettings>(json);
+                if (settings != null)
+                {
+                    IPRanges = settings.IPRanges;
+                    Ports = settings.Ports;
+                    ScanIPv6 = settings.ScanIPv6;
+                    ShowOffline = settings.ShowOffline;
+                    ShowCached = settings.ShowCached;
+                    PeriodicScanEnabled = settings.PeriodicScanEnabled;
+                    PeriodicScanIntervalMinutes = settings.PeriodicScanIntervalMinutes;
+                }
+            }
+        }
+        catch
+        {
+            // ignore
+        }
+    }
+}
+
+public class ScannerScopeSettings
+{
+    public string IPRanges { get; set; } = string.Empty;
+    public string Ports { get; set; } = "80";
+    public bool ScanIPv6 { get; set; }
+    public bool ShowOffline { get; set; }
+    public bool ShowCached { get; set; } = true;
+    public bool PeriodicScanEnabled { get; set; }
+    public int PeriodicScanIntervalMinutes { get; set; } = 5;
+}
+
+public class SaveFileEventArgs : EventArgs
+{
+    public string DefaultFileName { get; }
+    public string FileExtension { get; }
+    public string Content { get; }
+    public string? ResultFilePath { get; set; }
+
+    public SaveFileEventArgs(string defaultFileName, string fileExtension, string content)
+    {
+        DefaultFileName = defaultFileName;
+        FileExtension = fileExtension;
+        Content = content;
     }
 }
 

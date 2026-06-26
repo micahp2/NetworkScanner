@@ -113,6 +113,10 @@ public partial class MainWindow : Window
         VersionText.Text = ver != null ? $"v{ver.Major}.{ver.Minor}.{ver.Build}" : "v1.0.2";
 
         PopulateNetworkRanges();
+
+        RangesText.SelectionChanged += (s, e) => { _resultsView?.Refresh(); RefreshStatusCounts(); };
+        RangesText.LostFocus += (s, e) => { _resultsView?.Refresh(); RefreshStatusCounts(); };
+        RangesText.AddHandler(System.Windows.Controls.TextBox.TextChangedEvent, new System.Windows.Controls.TextChangedEventHandler((s, e) => { _resultsView?.Refresh(); RefreshStatusCounts(); }));
     }
 
     // ── Port parsing ─────────────────────────────────────────────────────────
@@ -239,6 +243,7 @@ public partial class MainWindow : Window
     private bool FilterResults(object item)
     {
         if (item is not ScanResult r) return false;
+        if (!NetworkScanner.Core.NetworkScannerUtils.IsIpInRanges(r.IPAddress, RangesText.Text)) return false;
         if (r.IsCached)
             return ShowCachedCheck.IsChecked == true;
         if (!r.IsOnline)

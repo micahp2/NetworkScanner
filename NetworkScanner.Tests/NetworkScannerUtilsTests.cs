@@ -94,4 +94,20 @@ public class NetworkScannerTests
         ushort check = IcmpPacket.ComputeChecksum(bytes);
         check.Should().Be(0);
     }
+    [Theory]
+    [InlineData("192.168.1.5", "192.168.1.5", true)]
+    [InlineData("192.168.1.5", "192.168.1.0/24", true)]
+    [InlineData("192.168.1.5", "192.168.1.1-192.168.1.10", true)]
+    [InlineData("192.168.1.5", "10.0.0.1, 192.168.1.5, 172.16.0.0/16", true)]
+    [InlineData("192.168.1.5", "192.168.2.0/24", false)]
+    [InlineData("192.168.1.5", "192.168.1.10-192.168.1.20", false)]
+    [InlineData("192.168.1.5", "", true)]
+    [InlineData("fe80::5", "fe80::/64", true)]
+    [InlineData("fe80::5", "fe80::1-fe80::10", true)]
+    [InlineData("fe80::5", "fe81::/64", false)]
+    public void IsIpInRanges_Should_Match_Correctly(string ip, string ranges, bool expected)
+    {
+        var result = NetworkScannerUtils.IsIpInRanges(ip, ranges);
+        result.Should().Be(expected);
+    }
 }

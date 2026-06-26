@@ -10,8 +10,8 @@ Write-Host "[info] RepoRoot: $(Get-Location)"
 $checks = @(
   @{ Name = "ScanResult has FirstSeen"; Path = "models/ScanResult.cs"; Pattern = "FirstSeen" },
   @{ Name = "ScanResult has LastSeen"; Path = "models/ScanResult.cs"; Pattern = "LastSeen" },
-  @{ Name = "NetworkScannerService sets FirstSeen"; Path = "services/NetworkScannerService.cs"; Pattern = "FirstSeen\s*=\s*now" },
-  @{ Name = "NetworkScannerService sets LastSeen"; Path = "services/NetworkScannerService.cs"; Pattern = "LastSeen\s*=\s*now" },
+  @{ Name = "ScannerViewModel sets FirstSeen"; Path = "NetworkScanner.WinUIPrototype/ViewModels/ScannerViewModel.cs"; Pattern = "FirstSeen\s*\?\?=\s*now" },
+  @{ Name = "ScannerViewModel sets LastSeen"; Path = "NetworkScanner.WinUIPrototype/ViewModels/ScannerViewModel.cs"; Pattern = "LastSeen\s*=\s*now" },
   @{ Name = "BuildCandidateList exists"; Path = "services/NetworkScannerService.cs"; Pattern = "BuildCandidateList\(" },
   @{ Name = "MainWindow AddResultToGrid exists"; Path = "MainWindow.xaml.cs"; Pattern = "AddResultToGrid\(" },
   @{ Name = "MainWindow updates LastSeen"; Path = "MainWindow.xaml.cs"; Pattern = "LastSeen\s*=\s*now" },

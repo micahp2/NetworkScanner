@@ -24,6 +24,7 @@ public partial class App : Application
         PlaySound("SystemHand", IntPtr.Zero, SND_ALIAS | SND_ASYNC | SND_NODEFAULT);
 
     private Window? _window;
+    public Window? MainWindow => _window;
 
     public ScannerViewModel ScannerViewModel { get; } = new();
 

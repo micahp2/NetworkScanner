@@ -144,7 +144,12 @@ public sealed partial class MainWindow : Window
         Grid.SetColumn(nav, 0);
         body.Children.Add(nav);
 
-        _contentHost = new ContentControl { Margin = new Thickness(0, 0, 10, 10) };
+        _contentHost = new ContentControl
+        {
+            Margin = new Thickness(0, 0, 10, 10),
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            VerticalContentAlignment = VerticalAlignment.Stretch
+        };
         Grid.SetColumn(_contentHost, 1);
         body.Children.Add(_contentHost);
 

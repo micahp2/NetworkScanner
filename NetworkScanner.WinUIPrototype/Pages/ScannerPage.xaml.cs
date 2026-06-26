@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Threading.Tasks;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -32,6 +33,15 @@ public sealed partial class ScannerPage : Page
     private TextBlock _scopeSummary = null!;
     private Grid _tableGrid = null!;
     private Grid _headerGrid = null!;
+    private ScrollViewer _tableScrollViewer = null!;
+    private Border _tableCard = null!;
+    private ScrollViewer? _verticalScrollViewer;
+    private Canvas _scrollAnchorCanvas = null!;
+    private bool _isMiddleScrolling;
+    private Point _middleScrollStartPoint;
+    private DispatcherTimer? _middleScrollTimer;
+    private double _middleScrollVelocityX;
+    private double _middleScrollVelocityY;
 
     private readonly List<string> _columnOrder = new()
     {
@@ -83,11 +93,9 @@ public sealed partial class ScannerPage : Page
         viewTitleCard.Background = Brush(0xFF, 0x16, 0x16, 0x18);
         var titleGrid = new Grid();
         titleGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        titleGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // scope summary
-        titleGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // scope button
+        titleGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // scope button (combined)
         titleGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // scan button
-        titleGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // divider
-        titleGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // overflow
+        titleGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // export button
 
         titleGrid.Children.Add(new TextBlock
         {
@@ -106,28 +114,13 @@ public sealed partial class ScannerPage : Page
             MaxWidth = 260,
             Foreground = Brush(0xFF, 0xC4, 0xC8, 0xD0)
         };
-        // Binding intentionally omitted; summary text is composed from range + ports below.
-        var scopeSummaryChip = new Border
-        {
-            Background = Brush(0x55, 0x3B, 0x3F, 0x47),
-            BorderBrush = Brush(0x99, 0x4A, 0x4F, 0x58),
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(12),
-            Padding = new Thickness(10, 4, 10, 4),
-            Margin = new Thickness(0, 0, 12, 0),
-            VerticalAlignment = VerticalAlignment.Center,
-            Child = _scopeSummary
-        };
-        Grid.SetColumn(scopeSummaryChip, 1);
-        titleGrid.Children.Add(scopeSummaryChip);
-
-        RefreshScopeSummaryText();
 
         var scopeBtn = new Button
         {
-            MinWidth = 96,
-            Margin = new Thickness(0, 0, 8, 0),
             UseSystemFocusVisuals = false,
+            Padding = new Thickness(10, 4, 10, 4),
+            Margin = new Thickness(0, 0, 12, 0),
+            VerticalAlignment = VerticalAlignment.Center,
             Content = new StackPanel
             {
                 Orientation = Orientation.Horizontal,
@@ -135,12 +128,20 @@ public sealed partial class ScannerPage : Page
                 Children =
                 {
                     new SymbolIcon(Symbol.World),
-                    new TextBlock { Text = "Scope", VerticalAlignment = VerticalAlignment.Center }
+                    _scopeSummary
                 }
             }
         };
+        scopeBtn.Resources["ButtonBackground"] = Brush(0x33, 0x3B, 0x3F, 0x47);
+        scopeBtn.Resources["ButtonBackgroundPointerOver"] = Brush(0x55, 0x4E, 0x54, 0x61);
+        scopeBtn.Resources["ButtonBackgroundPressed"] = Brush(0x77, 0x4E, 0x54, 0x61);
+        scopeBtn.Resources["ButtonBorderBrush"] = Brush(0xFF, 0x4A, 0x4F, 0x58);
+        scopeBtn.Resources["ButtonBorderBrushPointerOver"] = Brush(0xFF, 0x88, 0x90, 0x9E);
+        scopeBtn.Resources["ButtonBorderBrushPressed"] = Brush(0xFF, 0x88, 0x90, 0x9E);
         scopeBtn.Resources["ButtonBorderBrushFocused"] = Brush(0x88, 0x4A, 0x8D, 0xF7);
         scopeBtn.Resources["ButtonBackgroundFocused"] = Brush(0x33, 0x4A, 0x8D, 0xF7);
+
+        RefreshScopeSummaryText();
 
         var scopeFlyoutPanel = new StackPanel { Spacing = 8, Width = 360 };
 
@@ -314,7 +315,7 @@ public sealed partial class ScannerPage : Page
                 Child = scopeFlyoutPanel
             }
         };
-        Grid.SetColumn(scopeBtn, 2);
+        Grid.SetColumn(scopeBtn, 1);
         titleGrid.Children.Add(scopeBtn);
 
         _scanActionSymbol = new SymbolIcon(Symbol.Play) { Margin = new Thickness(0, 0, 6, 0) };
@@ -337,35 +338,31 @@ public sealed partial class ScannerPage : Page
         scanBtnTop.Resources["ButtonBorderBrushFocused"] = Brush(0x88, 0x4A, 0x8D, 0xF7);
         scanBtnTop.Resources["ButtonBackgroundFocused"] = Brush(0x33, 0x4A, 0x8D, 0xF7);
         scanBtnTop.SetBinding(Button.CommandProperty, new Binding { Path = new PropertyPath("StartStopScanCommand") });
-        Grid.SetColumn(scanBtnTop, 3);
+        Grid.SetColumn(scanBtnTop, 2);
         titleGrid.Children.Add(scanBtnTop);
 
-        var toolbarDivider = new Border
+        var exportBtnContent = new StackPanel
         {
-            Width = 1,
-            Height = 22,
-            Background = Brush(0x66, 0x46, 0x4A, 0x52),
-            Margin = new Thickness(2, 0, 8, 0),
-            VerticalAlignment = VerticalAlignment.Center
+            Orientation = Orientation.Horizontal,
+            Spacing = 0,
+            Children =
+            {
+                new SymbolIcon(Symbol.Save) { Margin = new Thickness(0, 0, 6, 0) },
+                new TextBlock { Text = "Export", VerticalAlignment = VerticalAlignment.Center }
+            }
         };
-        Grid.SetColumn(toolbarDivider, 4);
-        titleGrid.Children.Add(toolbarDivider);
 
-        var overflowBtn = new Button
+        var exportBtn = new Button
         {
-            MinWidth = 40,
-            Content = new SymbolIcon(Symbol.More),
+            MinWidth = 90,
+            Content = exportBtnContent,
             UseSystemFocusVisuals = false
         };
-        overflowBtn.Resources["ButtonBorderBrushFocused"] = Brush(0x88, 0x4A, 0x8D, 0xF7);
-        overflowBtn.Resources["ButtonBackgroundFocused"] = Brush(0x33, 0x4A, 0x8D, 0xF7);
-        var overflowMenu = new MenuFlyout();
-        var exportItem = new MenuFlyoutItem { Text = "Export" };
-        exportItem.SetBinding(MenuFlyoutItem.CommandProperty, new Binding { Path = new PropertyPath("ExportCommand") });
-        overflowMenu.Items.Add(exportItem);
-        overflowBtn.Flyout = overflowMenu;
-        Grid.SetColumn(overflowBtn, 5);
-        titleGrid.Children.Add(overflowBtn);
+        exportBtn.Resources["ButtonBorderBrushFocused"] = Brush(0x88, 0x4A, 0x8D, 0xF7);
+        exportBtn.Resources["ButtonBackgroundFocused"] = Brush(0x33, 0x4A, 0x8D, 0xF7);
+        exportBtn.SetBinding(Button.CommandProperty, new Binding { Path = new PropertyPath("ExportCommand") });
+        Grid.SetColumn(exportBtn, 3);
+        titleGrid.Children.Add(exportBtn);
 
         viewTitleCard.Child = titleGrid;
         Grid.SetRow(viewTitleCard, 0);
@@ -449,8 +446,8 @@ public sealed partial class ScannerPage : Page
         // Inline search info now lives in the global top bar; no separate strip in this view.
 
         // Guaranteed table-like view with header row + columns (no third-party dependency)
-        var tableCard = Card(new Thickness(0, 0, 0, 0));
-        tableCard.Background = Brush(0xFF, 0x13, 0x14, 0x17);
+        _tableCard = Card(new Thickness(0, 0, 0, 0));
+        _tableCard.Background = Brush(0xFF, 0x13, 0x14, 0x17);
         _tableGrid = new Grid();
         _tableGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         _tableGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
@@ -521,21 +518,61 @@ public sealed partial class ScannerPage : Page
         Grid.SetRow(_resultsList, 1);
         _tableGrid.Children.Add(_resultsList);
 
-        var tableScrollViewer = new ScrollViewer
+        _tableScrollViewer = new ScrollViewer
         {
             HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
             HorizontalScrollMode = ScrollMode.Enabled,
             VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
             VerticalScrollMode = ScrollMode.Disabled
         };
-        tableScrollViewer.Content = _tableGrid;
-        tableCard.Child = tableScrollViewer;
+        _tableScrollViewer.Content = _tableGrid;
+        _tableScrollViewer.SizeChanged += (s, e) =>
+        {
+            _tableGrid.MinHeight = _tableScrollViewer.ActualHeight;
+        };
+        _tableCard.Child = _tableScrollViewer;
+
+        // Setup middle-click scrolling
+        _tableCard.AddHandler(UIElement.PointerPressedEvent, new PointerEventHandler(OnTablePointerPressed), true);
+        _tableCard.AddHandler(UIElement.PointerMovedEvent, new PointerEventHandler(OnTablePointerMoved), true);
+        _tableCard.AddHandler(UIElement.PointerReleasedEvent, new PointerEventHandler(OnTablePointerReleased), true);
+
         // Table must be in the star-sized row so ListView gets constrained height and can scroll.
-        Grid.SetRow(tableCard, 2);
-        content.Children.Add(tableCard);
+        Grid.SetRow(_tableCard, 2);
+        content.Children.Add(_tableCard);
 
         Grid.SetRow(content, 0);
         root.Children.Add(content);
+
+        // Scroll anchor overlay Canvas
+        _scrollAnchorCanvas = new Canvas
+        {
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
+            Width = 32,
+            Height = 32,
+            Visibility = Visibility.Collapsed,
+            IsHitTestVisible = false
+        };
+        var outerCircle = new Microsoft.UI.Xaml.Shapes.Ellipse
+        {
+            Width = 32,
+            Height = 32,
+            Fill = Brush(0xCC, 0x1E, 0x20, 0x24),
+            Stroke = Brush(0xFF, 0x4A, 0x8D, 0xF7),
+            StrokeThickness = 2
+        };
+        var innerCircle = new Microsoft.UI.Xaml.Shapes.Ellipse
+        {
+            Width = 8,
+            Height = 8,
+            Margin = new Thickness(12),
+            Fill = Brush(0xFF, 0x4A, 0x8D, 0xF7)
+        };
+        _scrollAnchorCanvas.Children.Add(outerCircle);
+        _scrollAnchorCanvas.Children.Add(innerCircle);
+        Grid.SetRowSpan(_scrollAnchorCanvas, 2);
+        root.Children.Add(_scrollAnchorCanvas);
 
         // Bottom-anchored status bar
         var footer = Card(new Thickness(0, 8, 0, 0));
@@ -786,17 +823,17 @@ public sealed partial class ScannerPage : Page
             {
                 case "Hostname":
                     sb.AppendLine($"      <Border Grid.Column='{i}' Tag='Hostname' Background='{{Binding HostnameCellBrush}}' BorderBrush='{borderBrush}' BorderThickness='{thickness}' Padding='6,0' Margin='0'>");
-                    sb.AppendLine("        <TextBlock Tag='Hostname' TextTrimming='CharacterEllipsis' Opacity='0.96'/>");
+                    sb.AppendLine("        <TextBlock Tag='Hostname' TextTrimming='CharacterEllipsis' Opacity='0.96' VerticalAlignment='Center'/>");
                     sb.AppendLine("      </Border>");
                     break;
                 case "IPAddress":
                     sb.AppendLine($"      <Border Grid.Column='{i}' Tag='IPAddress' Background='{{Binding IPAddressCellBrush}}' BorderBrush='{borderBrush}' BorderThickness='{thickness}' Padding='6,0' Margin='0'>");
-                    sb.AppendLine("        <TextBlock Tag='IPAddress' TextTrimming='CharacterEllipsis' Opacity='0.94'/>");
+                    sb.AppendLine("        <TextBlock Tag='IPAddress' TextTrimming='CharacterEllipsis' Opacity='0.94' VerticalAlignment='Center'/>");
                     sb.AppendLine("      </Border>");
                     break;
                 case "MACAddress":
                     sb.AppendLine($"      <Border Grid.Column='{i}' Tag='MACAddress' Background='{{Binding MACAddressCellBrush}}' BorderBrush='{borderBrush}' BorderThickness='{thickness}' Padding='6,0' Margin='0'>");
-                    sb.AppendLine("        <TextBlock Tag='MACAddress' TextTrimming='CharacterEllipsis' Opacity='0.94'/>");
+                    sb.AppendLine("        <TextBlock Tag='MACAddress' TextTrimming='CharacterEllipsis' Opacity='0.94' VerticalAlignment='Center'/>");
                     sb.AppendLine("      </Border>");
                     break;
                 case "StateLabel":
@@ -806,32 +843,32 @@ public sealed partial class ScannerPage : Page
                     break;
                 case "FirstSeen":
                     sb.AppendLine($"      <Border Grid.Column='{i}' Tag='FirstSeen' Background='{{Binding FirstSeenCellBrush}}' BorderBrush='{borderBrush}' BorderThickness='{thickness}' Padding='6,0' Margin='0'>");
-                    sb.AppendLine("        <TextBlock Tag='FirstSeen' TextTrimming='CharacterEllipsis' Opacity='0.94'/>");
+                    sb.AppendLine("        <TextBlock Tag='FirstSeen' TextTrimming='CharacterEllipsis' Opacity='0.94' VerticalAlignment='Center'/>");
                     sb.AppendLine("      </Border>");
                     break;
                 case "LastSeen":
                     sb.AppendLine($"      <Border Grid.Column='{i}' Tag='LastSeen' Background='{{Binding LastSeenCellBrush}}' BorderBrush='{borderBrush}' BorderThickness='{thickness}' Padding='6,0' Margin='0'>");
-                    sb.AppendLine("        <TextBlock Tag='LastSeen' TextTrimming='CharacterEllipsis' Opacity='0.94'/>");
+                    sb.AppendLine("        <TextBlock Tag='LastSeen' TextTrimming='CharacterEllipsis' Opacity='0.94' VerticalAlignment='Center'/>");
                     sb.AppendLine("      </Border>");
                     break;
                 case "Vendor":
                     sb.AppendLine($"      <Border Grid.Column='{i}' Tag='Vendor' Background='{{Binding VendorCellBrush}}' BorderBrush='{borderBrush}' BorderThickness='{thickness}' Padding='6,0' Margin='0'>");
-                    sb.AppendLine("        <TextBlock Tag='Vendor' TextTrimming='CharacterEllipsis' Opacity='0.94'/>");
+                    sb.AppendLine("        <TextBlock Tag='Vendor' TextTrimming='CharacterEllipsis' Opacity='0.94' VerticalAlignment='Center'/>");
                     sb.AppendLine("      </Border>");
                     break;
                 case "OpenPorts":
                     sb.AppendLine($"      <Border Grid.Column='{i}' Tag='OpenPorts' Background='{{Binding OpenPortsCellBrush}}' BorderBrush='{borderBrush}' BorderThickness='{thickness}' Padding='6,0' Margin='0'>");
-                    sb.AppendLine("        <TextBlock Tag='OpenPorts' TextTrimming='CharacterEllipsis' Opacity='0.94'/>");
+                    sb.AppendLine("        <TextBlock Tag='OpenPorts' TextTrimming='CharacterEllipsis' Opacity='0.94' VerticalAlignment='Center'/>");
                     sb.AppendLine("      </Border>");
                     break;
                 case "CustomName":
                     sb.AppendLine($"      <Border Grid.Column='{i}' Tag='CustomName' Background='{{Binding CustomNameCellBrush}}' BorderBrush='{borderBrush}' BorderThickness='{thickness}' Padding='6,0' Margin='0'>");
-                    sb.AppendLine("        <TextBlock Tag='CustomName' TextTrimming='CharacterEllipsis' Opacity='0.94'/>");
+                    sb.AppendLine("        <TextBlock Tag='CustomName' TextTrimming='CharacterEllipsis' Opacity='0.94' VerticalAlignment='Center'/>");
                     sb.AppendLine("      </Border>");
                     break;
                 case "IPv6Address":
                     sb.AppendLine($"      <Border Grid.Column='{i}' Tag='IPv6Address' Background='{{Binding IPv6AddressCellBrush}}' BorderBrush='{borderBrush}' BorderThickness='{thickness}' Padding='6,0' Margin='0'>");
-                    sb.AppendLine("        <TextBlock Tag='IPv6Address' TextTrimming='CharacterEllipsis' Opacity='0.94'/>");
+                    sb.AppendLine("        <TextBlock Tag='IPv6Address' TextTrimming='CharacterEllipsis' Opacity='0.94' VerticalAlignment='Center'/>");
                     sb.AppendLine("      </Border>");
                     break;
             }
@@ -849,6 +886,7 @@ public sealed partial class ScannerPage : Page
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
         ViewModel.PropertyChanged += ViewModel_PropertyChanged;
+        ViewModel.SaveFileRequested += ViewModel_SaveFileRequested;
         SyncFindPanel();
         UpdateSortHeaderIndicators();
         UpdateScanActionVisual();
@@ -884,6 +922,26 @@ public sealed partial class ScannerPage : Page
         }
 
         ApplyTextMatchHighlight(rootBorder, row);
+
+        if (container.ContextFlyout == null)
+        {
+            var menu = new MenuFlyout();
+            menu.Opening += (s, e) =>
+            {
+                if (s is MenuFlyout menuFlyout)
+                {
+                    if (container.Content is ScanResultRow clickedRow)
+                    {
+                        BuildDynamicMenu(menuFlyout, clickedRow);
+                    }
+                    else if (container.DataContext is ScanResultRow dcRow)
+                    {
+                        BuildDynamicMenu(menuFlyout, dcRow);
+                    }
+                }
+            };
+            container.ContextFlyout = menu;
+        }
     }
 
     private void RefreshVisibleRowVisuals()
@@ -1050,6 +1108,12 @@ public sealed partial class ScannerPage : Page
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
         ViewModel.PropertyChanged -= ViewModel_PropertyChanged;
+        ViewModel.SaveFileRequested -= ViewModel_SaveFileRequested;
+        if (_middleScrollTimer != null)
+        {
+            _middleScrollTimer.Stop();
+            _middleScrollTimer = null;
+        }
     }
 
     private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -1577,4 +1641,367 @@ public sealed partial class ScannerPage : Page
         }
         catch {}
     }
-}
+
+    private static void OpenUrl(string url)
+    {
+        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true }); }
+        catch { }
+    }
+
+    private static void OpenRdp(string ip)
+    {
+        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("mstsc", $"/v:{ip}") { UseShellExecute = true }); }
+        catch { }
+    }
+
+    private static void OpenShell(string? protocol, string ip, int port)
+    {
+        try
+        {
+            string cmd = protocol switch
+            {
+                "ssh" => $"ssh {ip}",
+                _     => port > 0 ? $"# {ip}:{port}" : $"# {ip}",
+            };
+
+            if (TryLaunch("wt.exe", $"new-tab -- powershell -NoExit -Command \"{cmd}\"")) return;
+            if (TryLaunch("powershell.exe", $"-NoExit -Command \"{cmd}\"")) return;
+            TryLaunch("cmd.exe", $"/k echo {cmd}");
+        }
+        catch { }
+    }
+
+    private static bool TryLaunch(string exe, string args)
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(exe, args) { UseShellExecute = true });
+            return true;
+        }
+        catch { return false; }
+    }
+
+    private static void AddCopyItem(MenuFlyoutSubItem parent, string label, string? value)
+    {
+        var item = new MenuFlyoutItem
+        {
+            Text = label,
+            IsEnabled = !string.IsNullOrEmpty(value)
+        };
+        item.Click += (_, _) =>
+        {
+            try
+            {
+                var package = new Windows.ApplicationModel.DataTransfer.DataPackage();
+                package.SetText(value ?? "");
+                Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(package);
+                Windows.ApplicationModel.DataTransfer.Clipboard.Flush();
+            }
+            catch { }
+        };
+        parent.Items.Add(item);
+    }
+
+    private static List<int> ParseOpenPorts(string portsText)
+    {
+        if (string.IsNullOrWhiteSpace(portsText))
+            return new List<int>();
+
+        return portsText
+            .Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(x => int.TryParse(x.Trim(), out var p) ? p : -1)
+            .Where(p => p is >= 1 and <= 65535)
+            .Distinct()
+            .OrderBy(p => p)
+            .ToList();
+    }
+
+    private void BuildDynamicMenu(MenuFlyout menu, ScanResultRow row)
+    {
+        menu.Items.Clear();
+
+        // 1. Copy submenu
+        var copy = new MenuFlyoutSubItem { Text = "Copy" };
+        AddCopyItem(copy, "IP Address", row.IPAddress);
+        AddCopyItem(copy, "Hostname", row.Hostname);
+        AddCopyItem(copy, "MAC Address", row.MACAddress);
+        AddCopyItem(copy, "Vendor", row.Vendor);
+        AddCopyItem(copy, "Open Ports", row.OpenPorts);
+        AddCopyItem(copy, "IPv6 Address", row.IPv6Address);
+        menu.Items.Add(copy);
+
+        // Parse open ports
+        var ports = ParseOpenPorts(row.OpenPorts);
+
+        // 2. Browse submenu
+        if (ports.Count > 0)
+        {
+            var browse = new MenuFlyoutSubItem { Text = "Browse" };
+            foreach (var port in ports)
+            {
+                var scheme = port is 443 or 8443 or 9443 ? "https" : "http";
+                var url = $"{scheme}://{row.IPAddress}:{port}";
+                var item = new MenuFlyoutItem { Text = $":{port}  ({scheme})", Tag = url };
+                item.Click += (s, e) =>
+                {
+                    if (s is MenuFlyoutItem mfi && mfi.Tag is string destUrl)
+                    {
+                        OpenUrl(destUrl);
+                    }
+                };
+                browse.Items.Add(item);
+            }
+            menu.Items.Add(browse);
+        }
+
+        // 3. Shell submenu
+        if (ports.Count > 0 || !string.IsNullOrEmpty(row.IPAddress))
+        {
+            var shell = new MenuFlyoutSubItem { Text = "Shell" };
+
+            // SSH (port 22)
+            if (ports.Contains(22))
+            {
+                var ssh = new MenuFlyoutItem { Text = $"SSH  ({row.IPAddress}:22)" };
+                ssh.Click += (_, _) => PromptSshUsernameAndLaunch(row.IPAddress);
+                shell.Items.Add(ssh);
+            }
+
+            // RDP (port 3389)
+            if (ports.Contains(3389))
+            {
+                var rdp = new MenuFlyoutItem { Text = $"RDP  ({row.IPAddress}:3389)" };
+                rdp.Click += (_, _) => OpenRdp(row.IPAddress);
+                shell.Items.Add(rdp);
+            }
+
+            // Other ports
+            var otherPorts = ports.Where(p => p is not 22 and not 3389).ToList();
+            if (otherPorts.Count > 0 && shell.Items.Count > 0)
+            {
+                shell.Items.Add(new MenuFlyoutSeparator());
+            }
+
+            foreach (var port in otherPorts)
+            {
+                var p = port;
+                var item = new MenuFlyoutItem { Text = $":{p}  ({row.IPAddress}:{p})" };
+                item.Click += (_, _) => OpenShell(null, row.IPAddress, p);
+                shell.Items.Add(item);
+            }
+
+            // Bare terminal if no entries
+            if (shell.Items.Count == 0)
+            {
+                var bare = new MenuFlyoutItem { Text = $"Terminal → {row.IPAddress}" };
+                bare.Click += (_, _) => OpenShell(null, row.IPAddress, 0);
+                shell.Items.Add(bare);
+            }
+
+            menu.Items.Add(shell);
+        }
+    }
+
+    private async Task ViewModel_SaveFileRequested(object sender, SaveFileEventArgs e)
+    {
+        try
+        {
+            var savePicker = new Windows.Storage.Pickers.FileSavePicker();
+
+            var app = (App)Application.Current;
+            var mainWindow = app.MainWindow;
+            if (mainWindow != null)
+            {
+                var hWnd = WinRT.Interop.WindowNative.GetWindowHandle(mainWindow);
+                WinRT.Interop.InitializeWithWindow.Initialize(savePicker, hWnd);
+            }
+
+            savePicker.SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.DocumentsLibrary;
+            savePicker.FileTypeChoices.Add("CSV Files", new List<string>() { ".csv" });
+            savePicker.SuggestedFileName = e.DefaultFileName;
+
+            var file = await savePicker.PickSaveFileAsync();
+            if (file != null)
+            {
+                await Windows.Storage.FileIO.WriteTextAsync(file, e.Content);
+                e.ResultFilePath = file.Path;
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error exporting file: {ex.Message}");
+        }
+    }
+
+    private async void PromptSshUsernameAndLaunch(string ip)
+    {
+        try
+        {
+            var textBox = new TextBox
+            {
+                PlaceholderText = "e.g. root or admin",
+                Width = 240,
+                HorizontalAlignment = HorizontalAlignment.Stretch
+            };
+
+            var dialog = new ContentDialog
+            {
+                Title = "Enter SSH Username",
+                Content = new StackPanel
+                {
+                    Spacing = 8,
+                    Children =
+                    {
+                        new TextBlock { Text = $"Connect to {ip} via SSH. Please enter the SSH username:" },
+                        textBox
+                    }
+                },
+                PrimaryButtonText = "Connect",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Primary,
+                XamlRoot = this.XamlRoot
+            };
+
+            dialog.Resources["ContentDialogBackground"] = Brush(0xFF, 0x1A, 0x1B, 0x1E);
+            dialog.Resources["ContentDialogBorderBrush"] = Brush(0xFF, 0x2A, 0x2A, 0x2F);
+
+            var result = await dialog.ShowAsync();
+            if (result == ContentDialogResult.Primary)
+            {
+                var username = textBox.Text.Trim();
+                var cmd = string.IsNullOrEmpty(username) ? $"ssh {ip}" : $"ssh {username}@{ip}";
+                
+                if (TryLaunch("wt.exe", $"new-tab -- powershell -NoExit -Command \"{cmd}\"")) return;
+                if (TryLaunch("powershell.exe", $"-NoExit -Command \"{cmd}\"")) return;
+                TryLaunch("cmd.exe", $"/k echo {cmd}");
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error showing SSH dialog: {ex.Message}");
+            OpenShell("ssh", ip, 22);
+        }
+    }
+
+    private ScrollViewer? FindScrollViewer(DependencyObject parent)
+    {
+        if (parent is ScrollViewer sv) return sv;
+        int count = VisualTreeHelper.GetChildrenCount(parent);
+        for (int i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            var result = FindScrollViewer(child);
+            if (result != null) return result;
+        }
+        return null;
+    }
+
+    private void OnTablePointerPressed(object sender, PointerRoutedEventArgs e)
+    {
+        var ptrPoint = e.GetCurrentPoint(_tableCard);
+        if (ptrPoint.Properties.IsMiddleButtonPressed)
+        {
+            _isMiddleScrolling = true;
+            _middleScrollStartPoint = ptrPoint.Position;
+            _middleScrollVelocityX = 0;
+            _middleScrollVelocityY = 0;
+
+            // Show visual anchor under cursor
+            var rootPos = e.GetCurrentPoint(Content as UIElement).Position;
+            Canvas.SetLeft(_scrollAnchorCanvas, rootPos.X - 16);
+            Canvas.SetTop(_scrollAnchorCanvas, rootPos.Y - 16);
+            _scrollAnchorCanvas.Visibility = Visibility.Visible;
+
+            // Capture pointer so we get moved/released events anywhere
+            _tableCard.CapturePointer(e.Pointer);
+
+            if (_middleScrollTimer == null)
+            {
+                _middleScrollTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
+                _middleScrollTimer.Tick += (s, ev) =>
+                {
+                    if (!_isMiddleScrolling) return;
+
+                    // Scroll horizontally (outer ScrollViewer)
+                    if (_tableScrollViewer != null && _middleScrollVelocityX != 0)
+                    {
+                        double nextX = _tableScrollViewer.HorizontalOffset + _middleScrollVelocityX;
+                        _tableScrollViewer.ChangeView(nextX, null, null, true);
+                    }
+
+                    // Find and scroll vertically (inner ListView ScrollViewer)
+                    if (_verticalScrollViewer == null)
+                    {
+                        _verticalScrollViewer = FindScrollViewer(_resultsList);
+                    }
+
+                    if (_verticalScrollViewer != null && _middleScrollVelocityY != 0)
+                    {
+                        double nextY = _verticalScrollViewer.VerticalOffset + _middleScrollVelocityY;
+                        _verticalScrollViewer.ChangeView(null, nextY, null, true);
+                    }
+                };
+            }
+            _middleScrollTimer.Start();
+            e.Handled = true;
+        }
+    }
+
+    private void OnTablePointerMoved(object sender, PointerRoutedEventArgs e)
+    {
+        if (_isMiddleScrolling)
+        {
+            var currentPos = e.GetCurrentPoint(_tableCard).Position;
+            double dx = currentPos.X - _middleScrollStartPoint.X;
+            double dy = currentPos.Y - _middleScrollStartPoint.Y;
+
+            double deadzone = 8;
+
+            if (Math.Abs(dx) > deadzone)
+            {
+                _middleScrollVelocityX = (dx - Math.Sign(dx) * deadzone) * 0.15;
+            }
+            else
+            {
+                _middleScrollVelocityX = 0;
+            }
+
+            if (Math.Abs(dy) > deadzone)
+            {
+                _middleScrollVelocityY = (dy - Math.Sign(dy) * deadzone) * 0.15;
+            }
+            else
+            {
+                _middleScrollVelocityY = 0;
+            }
+            e.Handled = true;
+        }
+    }
+
+    private void OnTablePointerReleased(object sender, PointerRoutedEventArgs e)
+    {
+        if (_isMiddleScrolling)
+        {
+            var ptrPoint = e.GetCurrentPoint(_tableCard);
+            if (e.Pointer.PointerDeviceType == Microsoft.UI.Input.PointerDeviceType.Mouse && 
+                !ptrPoint.Properties.IsMiddleButtonPressed)
+            {
+                _isMiddleScrolling = false;
+                _scrollAnchorCanvas.Visibility = Visibility.Collapsed;
+                _tableCard.ReleasePointerCapture(e.Pointer);
+                _middleScrollTimer?.Stop();
+                e.Handled = true;
+            }
+        }
+    }
+}
+
+
+
+
+
+
+
+
+
+

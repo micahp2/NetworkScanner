@@ -74,6 +74,116 @@ namespace NetworkScanner.Core
                 list[n] = value;
             }
         }
+
+        private static int CompareBytes(byte[] a, byte[] b)
+        {
+            for (int i = 0; i < a.Length; i++)
+            {
+                int cmp = a[i].CompareTo(b[i]);
+                if (cmp != 0) return cmp;
+            }
+            return 0;
+        }
+
+        public static bool IsIpInRanges(string ipStr, string ipRangesStr)
+        {
+            if (string.IsNullOrWhiteSpace(ipRangesStr)) return true;
+            if (string.IsNullOrWhiteSpace(ipStr)) return false;
+
+            if (!IPAddress.TryParse(ipStr, out var ip)) return false;
+
+            var ranges = ipRangesStr.Split(new[] { ',', ';', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
+                                    .Select(r => r.Trim())
+                                    .Where(r => r.Length > 0);
+
+            bool hasAnyValidRange = false;
+
+            foreach (var range in ranges)
+            {
+                hasAnyValidRange = true;
+                try
+                {
+                    if (range.Contains('/'))
+                    {
+                        var parts = range.Split('/');
+                        if (parts.Length == 2 && 
+                            IPAddress.TryParse(parts[0], out var baseAddr) && 
+                            int.TryParse(parts[1], out int prefix))
+                        {
+                            if (ip.AddressFamily == baseAddr.AddressFamily)
+                            {
+                                if (ip.AddressFamily == AddressFamily.InterNetwork)
+                                {
+                                    uint ipVal = IpToUint(ip);
+                                    uint baseVal = IpToUint(baseAddr);
+                                    uint mask = prefix == 0 ? 0 : ~((1u << (32 - prefix)) - 1);
+                                    if ((ipVal & mask) == (baseVal & mask)) return true;
+                                }
+                                else if (ip.AddressFamily == AddressFamily.InterNetworkV6)
+                                {
+                                    var ipBytes = ip.GetAddressBytes();
+                                    var baseBytes = baseAddr.GetAddressBytes();
+                                    int bytesToCheck = prefix / 8;
+                                    int bitsToCheck = prefix % 8;
+                                    bool match = true;
+                                    for (int i = 0; i < bytesToCheck; i++)
+                                    {
+                                        if (ipBytes[i] != baseBytes[i]) { match = false; break; }
+                                    }
+                                    if (match && bitsToCheck > 0)
+                                    {
+                                        int mask = 0xFF << (8 - bitsToCheck);
+                                        if ((ipBytes[bytesToCheck] & mask) != (baseBytes[bytesToCheck] & mask)) match = false;
+                                    }
+                                    if (match) return true;
+                                }
+                            }
+                        }
+                    }
+                    else if (range.Contains('-'))
+                    {
+                        var parts = range.Split('-');
+                        if (parts.Length == 2 && 
+                            IPAddress.TryParse(parts[0].Trim(), out var sAddr) && 
+                            IPAddress.TryParse(parts[1].Trim(), out var eAddr))
+                        {
+                            if (ip.AddressFamily == sAddr.AddressFamily)
+                            {
+                                if (ip.AddressFamily == AddressFamily.InterNetwork)
+                                {
+                                    uint ipVal = IpToUint(ip);
+                                    uint sVal = IpToUint(sAddr);
+                                    uint eVal = IpToUint(eAddr);
+                                    if (sVal > eVal) (sVal, eVal) = (eVal, sVal);
+                                    if (ipVal >= sVal && ipVal <= eVal) return true;
+                                }
+                                else if (ip.AddressFamily == AddressFamily.InterNetworkV6)
+                                {
+                                    var ipBytes = ip.GetAddressBytes();
+                                    var sBytes = sAddr.GetAddressBytes();
+                                    var eBytes = eAddr.GetAddressBytes();
+                                    if (CompareBytes(sBytes, eBytes) > 0) (sBytes, eBytes) = (eBytes, sBytes);
+                                    if (CompareBytes(ipBytes, sBytes) >= 0 && CompareBytes(ipBytes, eBytes) <= 0) return true;
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        if (IPAddress.TryParse(range, out var singleIp))
+                        {
+                            if (ip.Equals(singleIp)) return true;
+                        }
+                    }
+                }
+                catch
+                {
+                    // Ignore parsing
+                }
+            }
+
+            return !hasAnyValidRange;
+        }
     }
 
     public class IcmpPacket
