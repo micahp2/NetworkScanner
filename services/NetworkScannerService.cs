@@ -313,6 +313,10 @@ public class NetworkScannerService
                 {
                     break;
                 }
+                catch (ObjectDisposedException)
+                {
+                    break;
+                }
                 catch (Exception) {}
             }
         }, token);
@@ -396,6 +400,10 @@ public class NetworkScannerService
                     }
                 }
                 catch (SocketException ex) when (ex.SocketErrorCode == SocketError.Interrupted || ex.SocketErrorCode == SocketError.OperationAborted)
+                {
+                    break;
+                }
+                catch (ObjectDisposedException)
                 {
                     break;
                 }
