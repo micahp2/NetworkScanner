@@ -1,7 +1,10 @@
 using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 using FluentAssertions;
 using Xunit;
 using NetworkScanner.Core;
+using NetworkScanner.Services;
 
 namespace NetworkScanner.Tests;
 
@@ -34,5 +37,39 @@ public class NetworkScannerTests
         
         shuffled.Should().BeEquivalentTo(original);
         shuffled.Should().NotEqual(original);
+    }
+
+    [Fact]
+    public async Task ScanPortAsync_Should_ReturnTrue_ForOpenPort()
+    {
+        var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+        listener.Start();
+        int port = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
+
+        try
+        {
+            _ = Task.Run(() => {
+                try { using var s = listener.AcceptSocket(); } catch {}
+            });
+
+            var result = await NetworkScannerService.ScanPortAsync("127.0.0.1", port, 1000, CancellationToken.None);
+            result.Should().BeTrue();
+        }
+        finally
+        {
+            listener.Stop();
+        }
+    }
+
+    [Fact]
+    public async Task ScanPortAsync_Should_ReturnFalse_ForClosedPort()
+    {
+        var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+        listener.Start();
+        int port = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop();
+
+        var result = await NetworkScannerService.ScanPortAsync("127.0.0.1", port, 1000, CancellationToken.None);
+        result.Should().BeFalse();
     }
 }

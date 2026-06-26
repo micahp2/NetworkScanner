@@ -73,7 +73,7 @@ public class NetworkScannerService
                 foreach (var kv in postCache) macCache[kv.Key] = kv.Value;
             }
 
-            await EnrichAndReportAsync(liveHosts, options, macCache, token);
+            await ScanPortsAndReportAsync(liveHosts, options, macCache, token);
             ScanCompleted?.Invoke(this, EventArgs.Empty);
         }
         catch (OperationCanceledException) { }
@@ -212,13 +212,51 @@ public class NetworkScannerService
         } catch { return false; }
     }
 
-    private Task EnrichAndReportAsync(List<string> hosts, ScanOptions opts, Dictionary<string, string> macs, CancellationToken token) {
-        foreach (var ip in hosts) {
-            if (token.IsCancellationRequested) break;
+    public static async Task<bool> ScanPortAsync(string ipAddress, int port, int timeoutMs, CancellationToken token) {
+        if (!IPAddress.TryParse(ipAddress, out var address))
+            return false;
+
+        try {
+            using var socket = new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(token);
+            cts.CancelAfter(timeoutMs);
+
+            await socket.ConnectAsync(address, port, cts.Token);
+            return true;
+        } catch { return false; }
+    }
+
+    private async Task ScanPortsAndReportAsync(List<string> hosts, ScanOptions opts, Dictionary<string, string> macs, CancellationToken token) {
+        using var sem = new SemaphoreSlim(200);
+
+        var tasks = hosts.Select(async ip => {
+            if (token.IsCancellationRequested) return;
+
+            var openPorts = new List<int>();
+            if (opts.Ports != null && opts.Ports.Count > 0) {
+                var portTasks = opts.Ports.Select(async port => {
+                    if (token.IsCancellationRequested) return;
+                    await sem.WaitAsync(token);
+                    try {
+                        if (await ScanPortAsync(ip, port, opts.PortTimeout, token)) {
+                            lock (openPorts) {
+                                openPorts.Add(port);
+                            }
+                        }
+                    } finally {
+                        sem.Release();
+                    }
+                });
+                await Task.WhenAll(portTasks);
+            }
+
             var res = new ScanResult { IPAddress = ip, IsResponsive = true };
             if (opts.LookupMAC && macs.TryGetValue(ip, out var mac)) res.MACAddress = mac;
+            res.OpenPorts = openPorts.OrderBy(p => p).ToList();
+
             HostFound?.Invoke(this, res);
-        }
-        return Task.CompletedTask;
+        });
+
+        await Task.WhenAll(tasks);
     }
 }
