@@ -50,31 +50,34 @@ public class NetworkScannerService
 
         try
         {
-            StatusChanged?.Invoke(this, "Building scan list...");
-            var candidates = BuildCandidateList(options, out var explicitCount, out var augmentedCount, out bool usedAugmentation);
-
-            if (usedAugmentation)
-                StatusChanged?.Invoke(this, $"Scan targets: explicit {explicitCount} + discovered {augmentedCount} = {candidates.Count}");
-            else
-                StatusChanged?.Invoke(this, $"Scan targets: explicit {explicitCount} (no connection-table augmentation)");
-
-            var macCache = options.LookupMAC ? BuildMacCache() : new Dictionary<string, string>(StringComparer.Ordinal);
-
-            // Shuffle target candidates to randomize scanning order
-            var shuffledCandidates = candidates.ToList();
-            NetworkScanner.Core.NetworkScannerUtils.Shuffle(shuffledCandidates);
-
-            var liveHosts = await PingAllAsync(shuffledCandidates, options, token);
-            
-            if (options.LookupMAC && liveHosts.Count > 0)
+            await Task.Run(async () =>
             {
-                await Task.Delay(800, token);
-                var postCache = BuildMacCache();
-                foreach (var kv in postCache) macCache[kv.Key] = kv.Value;
-            }
+                StatusChanged?.Invoke(this, "Building scan list...");
+                var candidates = BuildCandidateList(options, out var explicitCount, out var augmentedCount, out bool usedAugmentation);
 
-            await ScanPortsAndReportAsync(liveHosts, options, macCache, token);
-            ScanCompleted?.Invoke(this, EventArgs.Empty);
+                if (usedAugmentation)
+                    StatusChanged?.Invoke(this, $"Scan targets: explicit {explicitCount} + discovered {augmentedCount} = {candidates.Count}");
+                else
+                    StatusChanged?.Invoke(this, $"Scan targets: explicit {explicitCount} (no connection-table augmentation)");
+
+                var macCache = options.LookupMAC ? BuildMacCache() : new Dictionary<string, string>(StringComparer.Ordinal);
+
+                // Shuffle target candidates to randomize scanning order
+                var shuffledCandidates = candidates.ToList();
+                NetworkScanner.Core.NetworkScannerUtils.Shuffle(shuffledCandidates);
+
+                var liveHosts = await PingAllAsync(shuffledCandidates, options, token);
+                
+                if (options.LookupMAC && liveHosts.Count > 0)
+                {
+                    await Task.Delay(800, token);
+                    var postCache = BuildMacCache();
+                    foreach (var kv in postCache) macCache[kv.Key] = kv.Value;
+                }
+
+                await ScanPortsAndReportAsync(liveHosts, options, macCache, token);
+                ScanCompleted?.Invoke(this, EventArgs.Empty);
+            }, token);
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) { StatusChanged?.Invoke(this, $"Error: {ex.Message}"); }
