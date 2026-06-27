@@ -1,3 +1,4 @@
+using NetworkScanner.Core;
 using NetworkScanner.Models;
 using NetworkScanner.Services;
 using NetworkScanner.WinUIPrototype.Models;
@@ -61,6 +62,20 @@ public sealed class RealScannerBackend : IScannerBackend
             .OrderBy(r => IPv4SortKey(r.IPAddress))
             .ThenBy(r => r.IPAddress, StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    public async Task<IReadOnlyList<int>> ScanPortsForHostAsync(
+        string ip,
+        string ports,
+        int portTimeoutMs,
+        CancellationToken token,
+        IProgress<int>? progress = null)
+    {
+        var parsed = NetworkScannerUtils.ParsePorts(ports);
+        if (parsed.Count == 0)
+            parsed = new List<int> { 22, 80, 443 };
+
+        return await NetworkScannerService.ScanPortsForHostAsync(ip, parsed, portTimeoutMs, token, progress);
     }
 
     private static ScanOptions BuildOptions(string ipRanges, string ports, bool scanIPv4, bool scanIPv6)

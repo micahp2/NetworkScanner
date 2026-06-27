@@ -49,7 +49,10 @@
     <Compile Include="..\models\ScanResult.cs" Link="Core\Models\ScanResult.cs" />
     <Compile Include="..\services\IPHelperAPI.cs" Link="Core\Services\IPHelperAPI.cs" />
     <Compile Include="..\services\DatabaseService.cs" Link="Core\Services\DatabaseService.cs" />
+    <Compile Include="..\services\DeviceEnrichmentService.cs" Link="Core\Services\DeviceEnrichmentService.cs" />
     <Compile Include="..\services\NetworkScannerService.cs" Link="Core\Services\NetworkScannerService.cs" />
+    <Compile Include="..\models\UserDeviceMetadata.cs" Link="Core\Models\UserDeviceMetadata.cs" />
+    <Compile Include="..\Core\DeviceIdentityHelper.cs" Link="Core\DeviceIdentityHelper.cs" />
     <Compile Include="..\Core\NetworkScannerUtils.cs" Link="Core\NetworkScannerUtils.cs" />
   </ItemGroup>
 </Project>

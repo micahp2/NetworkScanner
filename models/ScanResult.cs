@@ -46,7 +46,25 @@ public class ScanResult : INotifyPropertyChanged
         set { Set(ref _openPorts, value); PropertyChanged?.Invoke(this, new(nameof(OpenPortsString))); }
     }
 
-    public string OpenPortsString => string.Join(", ", _openPorts);
+    public string OpenPortsString
+    {
+        get => string.Join(", ", _openPorts);
+        set
+        {
+            if (string.IsNullOrWhiteSpace(value)) return;
+            var ports = value.Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(x => int.TryParse(x.Trim(), out var p) ? p : -1)
+                .Where(p => p is >= 1 and <= 65535)
+                .Distinct()
+                .OrderBy(p => p)
+                .ToList();
+            if (ports.Count > 0)
+            {
+                Set(ref _openPorts, ports);
+                PropertyChanged?.Invoke(this, new(nameof(OpenPortsString)));
+            }
+        }
+    }
 
     public DateTime ScanTime      { get => _scanTime;      set => Set(ref _scanTime, value); }
     public bool     IsResponsive  { get => _isResponsive;  set => Set(ref _isResponsive, value); }
@@ -56,6 +74,13 @@ public class ScanResult : INotifyPropertyChanged
     public string SearchTerm    { get => _searchTerm;    set => Set(ref _searchTerm, value); }
 
     public string? CustomName { get; set; }
+    public string? OperatingSystem { get; set; }
+    public string? OsHint { get; set; }
+    public string? OsHintSource { get; set; }
+    public string DeviceIconKey { get; set; } = "Generic";
+    public string? TagsJson { get; set; }
+    public string? Notes { get; set; }
+    public string? PortActionsJson { get; set; }
     public DateTime? FirstSeen { get; set; }
     public DateTime? LastSeen { get; set; }
     public bool IsOnline 
@@ -85,8 +110,9 @@ public class ScanResult : INotifyPropertyChanged
     {
         get
         {
+            if (IsOnline) return "Live";
             if (IsCached) return "Cached";
-            return IsOnline ? "Live" : "Offline";
+            return "Offline";
         }
     }
 }

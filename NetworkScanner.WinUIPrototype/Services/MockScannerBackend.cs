@@ -47,4 +47,18 @@ public sealed class MockScannerBackend : IScannerBackend
 
         return set;
     }
+
+    public async Task<IReadOnlyList<int>> ScanPortsForHostAsync(
+        string ip,
+        string ports,
+        int portTimeoutMs,
+        CancellationToken token,
+        IProgress<int>? progress = null)
+    {
+        await Task.Delay(300, token);
+        var parsed = NetworkScanner.Core.NetworkScannerUtils.ParsePorts(ports);
+        if (parsed.Count == 0) parsed = new List<int> { 22, 80, 443 };
+        foreach (var p in parsed) progress?.Report(p);
+        return parsed.Where(p => p is 22 or 80 or 443 or 8080).ToList();
+    }
 }

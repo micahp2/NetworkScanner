@@ -496,4 +496,25 @@ public class NetworkScannerService
 
         await Task.WhenAll(tasks);
     }
+
+    public Task<bool> PingHostPublicAsync(string ip, int timeoutMs = 3000, CancellationToken token = default)
+        => PingHostAsync(ip, timeoutMs, token);
+
+    public static async Task<List<int>> ScanPortsForHostAsync(
+        string ip,
+        IEnumerable<int> ports,
+        int portTimeoutMs,
+        CancellationToken token,
+        IProgress<int>? progress = null)
+    {
+        var openPorts = new List<int>();
+        foreach (var port in ports.Distinct().OrderBy(p => p))
+        {
+            if (token.IsCancellationRequested) break;
+            progress?.Report(port);
+            if (await ScanPortAsync(ip, port, portTimeoutMs, token))
+                openPorts.Add(port);
+        }
+        return openPorts;
+    }
 }

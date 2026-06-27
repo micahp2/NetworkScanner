@@ -14,6 +14,7 @@ using System.ComponentModel;
 using System.Collections.ObjectModel;
 using NetworkScanner.Models;
 using NetworkScanner.Services;
+using NetworkScanner.Core;
 using Microsoft.Win32;
 
 public partial class MainWindow : Window
@@ -23,6 +24,7 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<ScanResult> _results;
     private readonly ICollectionView _resultsView;
     private readonly HashSet<string> _resultIPIndex = new();
+    private readonly HashSet<string> _resultMacIndex = new(StringComparer.OrdinalIgnoreCase);
 
     // Search state
     private List<ScanResult> _searchMatches = new();
@@ -268,14 +270,30 @@ public partial class MainWindow : Window
 
             foreach (var d in devices)
             {
-                if (string.IsNullOrWhiteSpace(d.IPAddress)) continue;
+                var mac = DeviceIdentityHelper.NormalizeMac(d.MACAddress);
+                if (mac is null) continue;
+
                 d.IsCached = true;
 
-                if (_resultIPIndex.Add(d.IPAddress))
+                var existing = DeviceIdentityHelper.FindExistingRow(_results, mac, d.IPAddress ?? string.Empty, r => r.MACAddress ?? string.Empty, r => r.IPAddress);
+                if (existing is not null)
                 {
-                    _results.Add(d);
-                    loaded++;
+                    existing.IPAddress = d.IPAddress ?? existing.IPAddress;
+                    existing.IsCached = true;
+                    existing.IsOnline = false;
+                    DeviceIdentityHelper.ApplyUserMetadata(existing, d);
+                    if (!string.IsNullOrWhiteSpace(existing.IPAddress))
+                        _resultIPIndex.Add(existing.IPAddress);
+                    _resultMacIndex.Add(mac);
+                    continue;
                 }
+
+                if (string.IsNullOrWhiteSpace(d.IPAddress)) continue;
+
+                _results.Add(d);
+                _resultIPIndex.Add(d.IPAddress);
+                _resultMacIndex.Add(mac);
+                loaded++;
             }
 
             if (loaded > 0)
@@ -495,6 +513,7 @@ public partial class MainWindow : Window
     {
         _results.Clear();
         _resultIPIndex.Clear();
+        _resultMacIndex.Clear();
         ClearSearch();
         UpdateStatus("Ready");
     }
@@ -550,52 +569,85 @@ public partial class MainWindow : Window
         result.FirstSeen ??= now;
         result.LastSeen = now;
 
+        var normalizedMac = DeviceIdentityHelper.NormalizeMac(result.MACAddress);
         ScanResult rowForPersistence = result;
 
-        if (_resultIPIndex.Add(result.IPAddress))
+        var existingByMac = normalizedMac is not null
+            ? DeviceIdentityHelper.FindExistingRow(_results, normalizedMac, string.Empty, r => r.MACAddress ?? string.Empty, r => r.IPAddress)
+            : null;
+        var existingByIp = _results.FirstOrDefault(r => r.IPAddress == result.IPAddress);
+
+        if (existingByMac is not null)
         {
+            var oldIp = existingByMac.IPAddress;
+            DeviceIdentityHelper.MergeScanFields(existingByMac, result);
+            existingByMac.FirstSeen ??= result.FirstSeen ?? now;
+            if (!string.Equals(oldIp, result.IPAddress, StringComparison.OrdinalIgnoreCase))
+            {
+                if (!string.IsNullOrWhiteSpace(oldIp) && !_results.Any(r => r != existingByMac && r.IPAddress == oldIp))
+                    _resultIPIndex.Remove(oldIp);
+                _resultIPIndex.Add(result.IPAddress);
+            }
+            rowForPersistence = existingByMac;
+        }
+        else if (existingByIp is not null && normalizedMac is not null &&
+                 DeviceIdentityHelper.NormalizeMac(existingByIp.MACAddress) is string existingMac &&
+                 !string.Equals(existingMac, normalizedMac, StringComparison.OrdinalIgnoreCase))
+        {
+            existingByIp.IsOnline = false;
+            existingByIp.IsCached = true;
             _results.Add(result);
+            _resultIPIndex.Add(result.IPAddress);
+            _resultMacIndex.Add(normalizedMac);
+            rowForPersistence = result;
+            _ = HydrateUserMetadataWpfAsync(result, normalizedMac);
+        }
+        else if (existingByIp is not null)
+        {
+            DeviceIdentityHelper.MergeScanFields(existingByIp, result);
+            existingByIp.FirstSeen ??= result.FirstSeen ?? now;
+            if (normalizedMac is not null && DeviceIdentityHelper.NormalizeMac(existingByIp.MACAddress) is null)
+            {
+                existingByIp.MACAddress = result.MACAddress;
+                _resultMacIndex.Add(normalizedMac);
+                _ = HydrateUserMetadataWpfAsync(existingByIp, normalizedMac);
+            }
+            rowForPersistence = existingByIp;
         }
         else
         {
-            var existing = _results.FirstOrDefault(r => r.IPAddress == result.IPAddress);
-            if (existing != null)
+            _results.Add(result);
+            _resultIPIndex.Add(result.IPAddress);
+            if (normalizedMac is not null)
             {
-                existing.IsOnline = result.IsResponsive;
-                existing.IsCached = false;
-                existing.ScanTime = now;
-
-                if (!string.IsNullOrWhiteSpace(result.Hostname))
-                    existing.Hostname = result.Hostname;
-                if (!string.IsNullOrWhiteSpace(result.MACAddress))
-                    existing.MACAddress = result.MACAddress;
-                if (!string.IsNullOrWhiteSpace(result.Vendor))
-                    existing.Vendor = result.Vendor;
-                if (!string.IsNullOrWhiteSpace(result.IPv6Address))
-                    existing.IPv6Address = result.IPv6Address;
-                if (result.OpenPorts != null && result.OpenPorts.Count > 0)
-                    existing.OpenPorts = result.OpenPorts;
-
-                existing.FirstSeen ??= result.FirstSeen ?? now;
-                existing.LastSeen = now;
-
-                rowForPersistence = existing;
+                _resultMacIndex.Add(normalizedMac);
+                _ = HydrateUserMetadataWpfAsync(result, normalizedMac);
             }
+            rowForPersistence = result;
         }
 
         RefreshStatusCounts();
         _resultsView?.Refresh();
 
-        // If a search is active, refresh highlights after updates
         if (!string.IsNullOrEmpty(SearchBox.Text))
             RefreshSearchHighlights();
 
-        // Persist when we have a valid MAC (service method will no-op otherwise)
         _ = Task.Run(async () =>
         {
             try { await _dbService.UpsertDeviceAsync(rowForPersistence); }
             catch { /* non-fatal persistence failure */ }
         });
+    }
+
+    private async Task HydrateUserMetadataWpfAsync(ScanResult row, string normalizedMac)
+    {
+        try
+        {
+            var dbDevice = await _dbService.GetDeviceByMacAsync(normalizedMac);
+            if (dbDevice is null) return;
+            await Dispatcher.InvokeAsync(() => DeviceIdentityHelper.ApplyUserMetadata(row, dbDevice));
+        }
+        catch { }
     }
 
     private void UpdateStatus(string status) => StatusText.Text = status;

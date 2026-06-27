@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Text;
+using NetworkScanner.Core;
 using NetworkScanner.WinUIPrototype.Common;
 using NetworkScanner.WinUIPrototype.Models;
 using NetworkScanner.WinUIPrototype.Services;
@@ -32,6 +33,7 @@ public class ScannerViewModel : ObservableObject
     private readonly DispatcherQueue? _dispatcherQueue;
     private readonly DatabaseService _dbService;
     private readonly HashSet<string> _resultIPIndex = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _resultMacIndex = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<ScanResultRow> _allResults = new();
     private CancellationTokenSource? _scanCts;
 
@@ -121,15 +123,20 @@ public class ScannerViewModel : ObservableObject
             {
                 SaveSettings();
             }
-            if (e.PropertyName is nameof(ShowOffline) or nameof(ShowCached))
+            if (e.PropertyName is nameof(ShowOffline) or nameof(ShowCached) or nameof(IPRanges))
             {
                 RunOnUi(RefreshFilteredResults);
             }
         };
     }
 
+    public void RefreshScopeFilters() => RefreshFilteredResults();
+
     public ObservableCollection<string> DetectedRanges { get; } = new();
     public ObservableCollection<ScanResultRow> Results { get; }
+    public ObservableCollection<ScanResultRow> DeepInfoDevices { get; } = new();
+
+    public int DeepInfoListVersion { get; private set; }
     public ObservableCollection<ColumnSetting> ColumnSettings { get; }
     public ReadOnlyObservableCollection<string> ScanStateTransitions { get; }
 
@@ -463,44 +470,7 @@ public class ScannerViewModel : ObservableObject
                 ScanIPv4,
                 ScanIPv6,
                 token,
-                onHostFound: row => RunOnUi(() =>
-                {
-                    var existing = _allResults.FirstOrDefault(r => string.Equals(r.IPAddress, row.IPAddress, StringComparison.OrdinalIgnoreCase));
-                    var now = DateTimeOffset.Now;
-
-                    ScanResultRow persistTarget;
-
-                    if (existing is null)
-                    {
-                        row.IsOnline = true;
-                        row.IsCached = false;
-                        row.FirstSeen ??= now;
-                        row.LastSeen ??= now;
-                        row.SetSortedColumn(_sortColumn);
-                        _allResults.Add(row);
-                        _resultIPIndex.Add(row.IPAddress);
-                        persistTarget = row;
-                    }
-                    else
-                    {
-                        existing.IsOnline = true;
-                        existing.IsCached = false;
-                        existing.LastSeen = now;
-                        existing.FirstSeen ??= row.FirstSeen ?? now;
-
-                        if (!string.IsNullOrWhiteSpace(row.Hostname)) existing.Hostname = row.Hostname;
-                        if (!string.IsNullOrWhiteSpace(row.MACAddress)) existing.MACAddress = row.MACAddress;
-                        if (!string.IsNullOrWhiteSpace(row.Vendor)) existing.Vendor = row.Vendor;
-                        if (!string.IsNullOrWhiteSpace(row.IPv6Address)) existing.IPv6Address = row.IPv6Address;
-                        if (!string.IsNullOrWhiteSpace(row.OpenPorts)) existing.OpenPorts = row.OpenPorts;
-                        if (!string.IsNullOrWhiteSpace(row.CustomName)) existing.CustomName = row.CustomName;
-                        persistTarget = existing;
-                    }
-
-                    _ = PersistDeviceAsync(persistTarget);
-
-                    RefreshFilteredResults();
-                }),
+                onHostFound: row => RunOnUi(() => _ = HandleHostFoundAsync(row)),
                 onStatus: status => RunOnUi(() =>
                 {
                     _lastBackendStatus = status;
@@ -562,6 +532,168 @@ public class ScannerViewModel : ObservableObject
             }
         }
     }
+
+    private async Task HandleHostFoundAsync(ScanResultRow incoming)
+    {
+        var now = DateTimeOffset.Now;
+        incoming.IsOnline = true;
+        incoming.IsCached = false;
+        incoming.LastSeen = now;
+
+        var normalizedMac = DeviceIdentityHelper.NormalizeMac(incoming.MACAddress);
+        var existingByMac = normalizedMac is not null
+            ? DeviceIdentityHelper.FindExistingRow(_allResults, normalizedMac, string.Empty, r => r.MACAddress, r => r.IPAddress)
+            : null;
+        var existingByIp = !string.IsNullOrWhiteSpace(incoming.IPAddress)
+            ? _allResults.FirstOrDefault(r => string.Equals(r.IPAddress, incoming.IPAddress, StringComparison.OrdinalIgnoreCase))
+            : null;
+
+        ScanResultRow persistTarget;
+
+        if (existingByMac is not null)
+        {
+            var oldIp = existingByMac.IPAddress;
+            ScanResultRowIdentity.MergeScanFields(existingByMac, incoming);
+            existingByMac.FirstSeen ??= incoming.FirstSeen ?? now;
+
+            if (!string.Equals(oldIp, incoming.IPAddress, StringComparison.OrdinalIgnoreCase))
+            {
+                UpdateIpIndex(oldIp, incoming.IPAddress);
+                existingByMac.IPAddress = incoming.IPAddress;
+            }
+
+            if (normalizedMac is not null)
+                _resultMacIndex.Add(normalizedMac);
+
+            persistTarget = existingByMac;
+        }
+        else if (existingByIp is not null && normalizedMac is not null &&
+                 DeviceIdentityHelper.NormalizeMac(existingByIp.MACAddress) is string existingMac &&
+                 !string.Equals(existingMac, normalizedMac, StringComparison.OrdinalIgnoreCase))
+        {
+            // IP reused by a different device — retire the old occupant at this IP.
+            existingByIp.IsOnline = false;
+            existingByIp.IsCached = true;
+            existingByIp.RetireLivePortsToCached();
+
+            incoming.FirstSeen ??= now;
+            incoming.SetSortedColumn(_sortColumn);
+            await HydrateUserMetadataFromDbAsync(incoming, normalizedMac);
+            _allResults.Add(incoming);
+            RegisterRowIndexes(incoming);
+            persistTarget = incoming;
+        }
+        else if (existingByIp is not null)
+        {
+            ScanResultRowIdentity.MergeScanFields(existingByIp, incoming);
+            existingByIp.FirstSeen ??= incoming.FirstSeen ?? now;
+
+            if (normalizedMac is not null && DeviceIdentityHelper.NormalizeMac(existingByIp.MACAddress) is null)
+            {
+                existingByIp.MACAddress = incoming.MACAddress;
+                _resultMacIndex.Add(normalizedMac);
+                await HydrateUserMetadataFromDbAsync(existingByIp, normalizedMac);
+            }
+
+            persistTarget = existingByIp;
+        }
+        else
+        {
+            incoming.FirstSeen ??= now;
+            incoming.SetSortedColumn(_sortColumn);
+            if (normalizedMac is not null)
+                await HydrateUserMetadataFromDbAsync(incoming, normalizedMac);
+            _allResults.Add(incoming);
+            RegisterRowIndexes(incoming);
+            persistTarget = incoming;
+        }
+
+        await PersistDeviceAsync(persistTarget);
+        RefreshFilteredResults();
+    }
+
+    private void RegisterRowIndexes(ScanResultRow row)
+    {
+        if (!string.IsNullOrWhiteSpace(row.IPAddress))
+            _resultIPIndex.Add(row.IPAddress);
+        var mac = DeviceIdentityHelper.NormalizeMac(row.MACAddress);
+        if (mac is not null)
+            _resultMacIndex.Add(mac);
+    }
+
+    private void UpdateIpIndex(string? oldIp, string newIp)
+    {
+        if (!string.IsNullOrWhiteSpace(oldIp) &&
+            !_allResults.Any(r => !string.Equals(r.IPAddress, newIp, StringComparison.OrdinalIgnoreCase) &&
+                                   string.Equals(r.IPAddress, oldIp, StringComparison.OrdinalIgnoreCase)))
+        {
+            _resultIPIndex.Remove(oldIp);
+        }
+
+        if (!string.IsNullOrWhiteSpace(newIp))
+            _resultIPIndex.Add(newIp);
+    }
+
+    private async Task HydrateUserMetadataFromDbAsync(ScanResultRow row, string normalizedMac)
+    {
+        try
+        {
+            var dbDevice = await _dbService.GetDeviceByMacAsync(normalizedMac);
+            if (dbDevice is not null)
+                ScanResultRowIdentity.ApplyUserMetadata(row, dbDevice);
+        }
+        catch
+        {
+            // non-fatal
+        }
+    }
+
+    public async Task UpdateUserMetadataAsync(ScanResultRow row, UserDeviceMetadata patch)
+    {
+        var mac = DeviceIdentityHelper.NormalizeMac(row.MACAddress);
+        if (mac is null) return;
+
+        if (patch.UpdateCustomName) row.CustomName = patch.CustomName ?? string.Empty;
+        if (patch.UpdateOperatingSystem) row.OperatingSystem = patch.OperatingSystem ?? string.Empty;
+        if (patch.UpdateOsHint) row.OsHint = patch.OsHint ?? string.Empty;
+        if (patch.UpdateOsHintSource) row.OsHintSource = patch.OsHintSource ?? string.Empty;
+        if (patch.UpdateDeviceIconKey) row.DeviceIconKey = string.IsNullOrWhiteSpace(patch.DeviceIconKey) ? "Generic" : patch.DeviceIconKey;
+        if (patch.UpdateTags) row.SetTags(DeviceIdentityHelper.ParseTags(patch.TagsJson));
+        if (patch.UpdateNotes) row.Notes = patch.Notes ?? string.Empty;
+        if (patch.UpdatePortActions) row.SetPortActionsFromJson(patch.PortActionsJson);
+
+        try
+        {
+            await _dbService.UpdateUserMetadataAsync(mac, patch);
+        }
+        catch
+        {
+            // non-fatal
+        }
+    }
+
+    public void SelectNextDevice()
+    {
+        if (DeepInfoDevices.Count == 0) return;
+        var idx = SelectedResult is null ? -1 : DeepInfoDevices.IndexOf(SelectedResult);
+        SelectedResult = DeepInfoDevices[(idx + 1) % DeepInfoDevices.Count];
+    }
+
+    public void SelectPreviousDevice()
+    {
+        if (DeepInfoDevices.Count == 0) return;
+        var idx = SelectedResult is null ? 0 : DeepInfoDevices.IndexOf(SelectedResult);
+        SelectedResult = DeepInfoDevices[idx <= 0 ? DeepInfoDevices.Count - 1 : idx - 1];
+    }
+
+    public IEnumerable<string> GetAllTags()
+        => _allResults.SelectMany(r => r.Tags).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(t => t);
+
+    public async Task PersistDevicePublicAsync(ScanResultRow row) => await PersistDeviceAsync(row);
+
+    public DatabaseService Database => _dbService;
+
+    public IScannerBackend Backend => _backend;
 
     private async Task StartPeriodicCountdownAsync()
     {
@@ -657,6 +789,8 @@ public class ScannerViewModel : ObservableObject
     {
         _allResults.Clear();
         Results.Clear();
+        _resultIPIndex.Clear();
+        _resultMacIndex.Clear();
         CurrentSearchIndex = -1;
         ApplySortColumnHighlights();
         ApplySearchHighlights();
@@ -996,6 +1130,7 @@ public class ScannerViewModel : ObservableObject
             }
 
             NotifySearchStatusChanged();
+            RefreshDeepInfoDeviceList();
             return;
         }
 
@@ -1027,7 +1162,33 @@ public class ScannerViewModel : ObservableObject
         }
 
         NotifySearchStatusChanged();
+        RefreshDeepInfoDeviceList();
     }
+
+    private void RefreshDeepInfoDeviceList()
+    {
+        DeepInfoDevices.Clear();
+        var term = SearchText.Trim();
+        foreach (var row in Results)
+        {
+            if (string.IsNullOrEmpty(term) || RowMatchesTerm(row, term))
+                DeepInfoDevices.Add(row);
+        }
+
+        DeepInfoListVersion++;
+        RaisePropertyChanged(nameof(DeepInfoListVersion));
+    }
+
+    private static bool PassesScopeFilter(ScanResultRow row, string ipRanges, bool showCached, bool showOffline)
+    {
+        if (!NetworkScanner.Core.NetworkScannerUtils.IsIpInRanges(row.IPAddress, ipRanges)) return false;
+        if (row.IsCached) return showCached;
+        if (!row.IsOnline) return showOffline;
+        return true;
+    }
+
+    private bool RowPassesScopeFilter(ScanResultRow row) =>
+        PassesScopeFilter(row, IPRanges, ShowCached, ShowOffline);
 
     private void UpdateSearchNavigationHighlight()
     {
@@ -1055,7 +1216,11 @@ public class ScannerViewModel : ObservableObject
                row.Vendor.Contains(term, comparison) ||
                row.OpenPorts.Contains(term, comparison) ||
                row.IPv6Address.Contains(term, comparison) ||
-               row.CustomName.Contains(term, comparison);
+               row.CustomName.Contains(term, comparison) ||
+               row.DisplayName.Contains(term, comparison) ||
+               row.TagsDisplay.Contains(term, comparison) ||
+               row.Notes.Contains(term, comparison) ||
+               row.DeviceIconKey.Contains(term, comparison);
     }
 
     private void NotifySearchStatusChanged()
@@ -1122,17 +1287,29 @@ public class ScannerViewModel : ObservableObject
             {
                 foreach (var d in devices)
                 {
+                    var mac = DeviceIdentityHelper.NormalizeMac(d.MACAddress);
+                    if (mac is null) continue;
+
+                    var existing = DeviceIdentityHelper.FindExistingRow(_allResults, mac, d.IPAddress ?? string.Empty, r => r.MACAddress, r => r.IPAddress);
+                    if (existing is not null)
+                    {
+                        existing.IPAddress = d.IPAddress ?? existing.IPAddress;
+                        existing.IsCached = true;
+                        existing.IsOnline = false;
+                        ScanResultRowIdentity.ApplyUserMetadata(existing, d);
+                        if (!string.IsNullOrWhiteSpace(existing.IPAddress))
+                            _resultIPIndex.Add(existing.IPAddress);
+                        _resultMacIndex.Add(mac);
+                        continue;
+                    }
+
                     if (string.IsNullOrWhiteSpace(d.IPAddress))
                         continue;
 
-                    if (!_resultIPIndex.Add(d.IPAddress))
-                        continue;
-
-                    _allResults.Add(new ScanResultRow
+                    var row = new ScanResultRow
                     {
                         IsOnline = false,
                         IsCached = true,
-                        CustomName = d.CustomName ?? string.Empty,
                         FirstSeen = d.FirstSeen.HasValue ? new DateTimeOffset(d.FirstSeen.Value) : null,
                         LastSeen = d.LastSeen.HasValue ? new DateTimeOffset(d.LastSeen.Value) : null,
                         IPAddress = d.IPAddress ?? string.Empty,
@@ -1141,7 +1318,11 @@ public class ScannerViewModel : ObservableObject
                         Vendor = d.Vendor ?? string.Empty,
                         OpenPorts = d.OpenPortsString ?? string.Empty,
                         IPv6Address = d.IPv6Address ?? string.Empty
-                    });
+                    };
+                    ScanResultRowIdentity.ApplyUserMetadata(row, d);
+                    _allResults.Add(row);
+                    RegisterRowIndexes(row);
+                    _resultMacIndex.Add(mac);
                 }
 
                 RefreshFilteredResults();
@@ -1158,24 +1339,7 @@ public class ScannerViewModel : ObservableObject
     {
         try
         {
-            var model = new ScanResult
-            {
-                IPAddress = row.IPAddress,
-                Hostname = string.IsNullOrWhiteSpace(row.Hostname) ? null : row.Hostname,
-                MACAddress = string.IsNullOrWhiteSpace(row.MACAddress) ? null : row.MACAddress,
-                Vendor = string.IsNullOrWhiteSpace(row.Vendor) ? null : row.Vendor,
-                IPv6Address = string.IsNullOrWhiteSpace(row.IPv6Address) ? null : row.IPv6Address,
-                OpenPorts = ParseOpenPorts(row.OpenPorts),
-                CustomName = string.IsNullOrWhiteSpace(row.CustomName) ? null : row.CustomName,
-                FirstSeen = row.FirstSeen?.DateTime,
-                LastSeen = row.LastSeen?.DateTime,
-                IsOnline = row.IsOnline,
-                IsCached = row.IsCached,
-                IsResponsive = row.IsOnline,
-                ScanTime = DateTime.Now
-            };
-
-            await _dbService.UpsertDeviceAsync(model);
+            await _dbService.UpsertDeviceAsync(ScanResultRowIdentity.ToScanResult(row));
         }
         catch
         {
@@ -1258,13 +1422,7 @@ public class ScannerViewModel : ObservableObject
 
     private void RefreshFilteredResults()
     {
-        var filtered = _allResults.Where(r =>
-        {
-            if (!NetworkScanner.Core.NetworkScannerUtils.IsIpInRanges(r.IPAddress, IPRanges)) return false;
-            if (r.IsCached) return ShowCached;
-            if (!r.IsOnline) return ShowOffline;
-            return true;
-        });
+        var filtered = _allResults.Where(RowPassesScopeFilter);
 
         // Apply active sorting dynamically
         IEnumerable<ScanResultRow> ordered = _sortColumn switch

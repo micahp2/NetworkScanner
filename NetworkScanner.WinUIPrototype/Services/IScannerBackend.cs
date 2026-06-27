@@ -14,4 +14,11 @@ public interface IScannerBackend
         CancellationToken token,
         Action<ScanResultRow>? onHostFound = null,
         Action<string>? onStatus = null);
+
+    Task<IReadOnlyList<int>> ScanPortsForHostAsync(
+        string ip,
+        string ports,
+        int portTimeoutMs,
+        CancellationToken token,
+        IProgress<int>? progress = null);
 }

@@ -268,12 +268,14 @@ public sealed partial class ScannerPage : Page
             periodicScanSwitch.IsOn = false;
             periodicIntervalBox.SelectedIndex = 1;
             RefreshScopeSummaryText();
+            ViewModel.RefreshScopeFilters();
         };
 
         var applyScopeBtn = new Button { Content = "Apply", MinWidth = 80 };
         applyScopeBtn.Click += (_, _) =>
         {
             RefreshScopeSummaryText();
+            ViewModel.RefreshScopeFilters();
             if (scopeBtn.Flyout is Flyout f)
             {
                 f.Hide();
@@ -917,6 +919,11 @@ public sealed partial class ScannerPage : Page
                 }
             };
             container.ContextFlyout = menu;
+            container.DoubleTapped += (_, _) =>
+            {
+                if (container.DataContext is ScanResultRow r)
+                    ((MainWindow)((App)Application.Current).MainWindow!).NavigateToDeepInfo(r);
+            };
         }
     }
 
@@ -1629,6 +1636,12 @@ public sealed partial class ScannerPage : Page
     private void BuildDynamicMenu(MenuFlyout menu, ScanResultRow row)
     {
         menu.Items.Clear();
+
+        var deepInfo = new MenuFlyoutItem { Text = "Open Deep Info" };
+        deepInfo.Click += (_, _) =>
+            ((MainWindow)((App)Application.Current).MainWindow!).NavigateToDeepInfo(row);
+        menu.Items.Add(deepInfo);
+        menu.Items.Add(new MenuFlyoutSeparator());
 
         // 1. Copy submenu
         var copy = new MenuFlyoutSubItem { Text = "Copy" };

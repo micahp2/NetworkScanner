@@ -8,6 +8,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Media;
 using NetworkScanner.WinUIPrototype.Pages;
+using NetworkScanner.WinUIPrototype.Models;
 using NetworkScanner.WinUIPrototype.ViewModels;
 using WinRT.Interop;
 
@@ -72,7 +73,7 @@ public sealed partial class MainWindow : Window
         _vm = ((App)Application.Current).ScannerViewModel;
         _vm.PropertyChanged += Vm_PropertyChanged;
 
-        Title = "Network Scanner";
+        Title = "Network Scanner — WinUI Preview";
 
         ExtendsContentIntoTitleBar = true;
 
@@ -443,6 +444,13 @@ public sealed partial class MainWindow : Window
         _historyLabel.Visibility = v;
         _aboutLabel.Visibility = v;
         _settingsLabel.Visibility = v;
+    }
+
+    public void NavigateToDeepInfo(ScanResultRow? row = null)
+    {
+        if (row is not null)
+            _vm.SelectedResult = row;
+        SelectView("deep");
     }
 
     private void SelectView(string view)
