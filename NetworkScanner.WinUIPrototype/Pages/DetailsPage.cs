@@ -29,7 +29,7 @@ public sealed class DetailsPage : Page
     private Grid _iconPickerGrid = null!;
     private ProgressRing _iconPickerProgress = null!;
     private TextBlock _iconPickerStatus = null!;
-    private readonly StackPanel _knownPortsPanel;
+    private readonly VariableSizedWrapGrid _knownPortsPanel;
     private readonly TextBlock _knownPortsSummary;
     private readonly TextBlock _knownPortsEmpty;
     private readonly StackPanel _portActionPanel;
@@ -38,6 +38,7 @@ public sealed class DetailsPage : Page
     private readonly TextBox _portActionCustomBox;
     private int? _selectedPort;
     private bool _portActionUiUpdating;
+    private bool _isRefreshingKnownPorts;
     private readonly ColumnDefinition _leftColumn;
     private readonly ColumnDefinition _rightColumn;
 
@@ -201,7 +202,16 @@ public sealed class DetailsPage : Page
         var refresh = new Button { Content = "Refresh Metadata" };
         refresh.SetBinding(Button.CommandProperty, new Binding { Path = new PropertyPath("RefreshMetadataCommand") });
         var copyProfile = new Button { Content = "Copy Profile" };
-        copyProfile.SetBinding(Button.CommandProperty, new Binding { Path = new PropertyPath("CopyProfileCommand") });
+        copyProfile.Click += async (_, _) =>
+        {
+            if (_vm.SelectedDevice is not null)
+            {
+                DeviceActions.CopyDeviceProfile(_vm.SelectedDevice);
+                copyProfile.Content = "Copied!";
+                await Task.Delay(1500);
+                copyProfile.Content = "Copy Profile";
+            }
+        };
         deviceTools.Children.Add(detectOs);
         deviceTools.Children.Add(refresh);
         deviceTools.Children.Add(copyProfile);
@@ -244,16 +254,10 @@ public sealed class DetailsPage : Page
             ConverterParameter = "Invert"
         });
 
-        _knownPortsPanel = new StackPanel { Spacing = 6, MaxHeight = 168 };
-        var knownPortsScroll = new ScrollViewer
-        {
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            Content = _knownPortsPanel
-        };
+        _knownPortsPanel = new VariableSizedWrapGrid { Orientation = Orientation.Horizontal, ItemWidth = double.NaN, ItemHeight = double.NaN };
 
         knownPortsInner.Children.Add(_knownPortsEmpty);
-        knownPortsInner.Children.Add(knownPortsScroll);
+        knownPortsInner.Children.Add(_knownPortsPanel);
 
         _portActionPanel = new StackPanel { Spacing = 8, Visibility = Visibility.Collapsed, Margin = new Thickness(0, 4, 0, 0) };
         _portActionTitle = new TextBlock { FontWeight = FontWeights.SemiBold, FontSize = 12, TextWrapping = TextWrapping.Wrap };
@@ -307,7 +311,17 @@ public sealed class DetailsPage : Page
         portInner.Children.Add(portBox);
         var scanBtn = new Button { Content = "Scan Ports" };
         scanBtn.SetBinding(Button.CommandProperty, new Binding { Path = new PropertyPath("ScanPortsCommand") });
-        portInner.Children.Add(scanBtn);
+        scanBtn.SetBinding(Control.IsEnabledProperty, new Binding { Path = new PropertyPath("CanStartPortScan") });
+
+        var cancelBtn = new Button { Content = "Cancel" };
+        cancelBtn.SetBinding(Button.CommandProperty, new Binding { Path = new PropertyPath("CancelPortScanCommand") });
+        cancelBtn.SetBinding(Control.IsEnabledProperty, new Binding { Path = new PropertyPath("IsPortScanning") });
+
+        var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        btnPanel.Children.Add(scanBtn);
+        btnPanel.Children.Add(cancelBtn);
+        portInner.Children.Add(btnPanel);
+
         var portStatus = new TextBlock { Opacity = 0.8 };
         portStatus.SetBinding(TextBlock.TextProperty, new Binding { Path = new PropertyPath("PortScanStatus") });
         portInner.Children.Add(portStatus);
@@ -319,7 +333,7 @@ public sealed class DetailsPage : Page
         right.Children.Add(_actionsPanel);
 
         right.Children.Add(SectionTitle("Tags"));
-        _tagsPanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, MaxWidth = 260 };
+        _tagsPanel = new StackPanel { Spacing = 6 };
         right.Children.Add(_tagsPanel);
         var tagBox = new TextBox { PlaceholderText = "Add tag, press Enter..." };
         tagBox.KeyDown += async (_, e) =>
@@ -366,6 +380,13 @@ public sealed class DetailsPage : Page
             else if (e.PropertyName is nameof(ScannerViewModel.DeepInfoListVersion))
             {
                 SyncListSelectionToDeepInfoDevices();
+            }
+        };
+        _vm.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(DeviceDetailViewModel.KnownPorts))
+            {
+                DispatcherQueue.TryEnqueue(() => RefreshKnownPortsPanel());
             }
         };
     }
@@ -462,7 +483,7 @@ public sealed class DetailsPage : Page
 
         var monitorToggle = new ToggleSwitch
         {
-            OnContent = "Live",
+            OnContent = "On",
             OffContent = "Off",
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -726,7 +747,6 @@ public sealed class DetailsPage : Page
             Content = new FontIcon
             {
                 Glyph = HexKeyToGlyph(hexKey),
-                FontFamily = FluentIconFont,
                 FontSize = 16
             }
         };
@@ -865,36 +885,34 @@ public sealed class DetailsPage : Page
 
     private void RefreshKnownPortsPanel()
     {
-        _vm.RefreshKnownPorts();
-        _knownPortsPanel.Children.Clear();
-        _knownPortsEmpty.Visibility = _vm.HasKnownPorts ? Visibility.Collapsed : Visibility.Visible;
-
-        if (!_vm.HasKnownPorts)
+        if (_isRefreshingKnownPorts) return;
+        _isRefreshingKnownPorts = true;
+        try
         {
-            ClearPortSelection();
-            return;
-        }
+            _knownPortsPanel.Children.Clear();
+            _knownPortsEmpty.Visibility = _vm.HasKnownPorts ? Visibility.Collapsed : Visibility.Visible;
 
-        if (_selectedPort is int selected && _vm.KnownPorts.All(p => p.Port != selected))
-            ClearPortSelection();
-
-        const int chipsPerRow = 3;
-        StackPanel? row = null;
-        var col = 0;
-        foreach (var port in _vm.KnownPorts)
-        {
-            if (col == 0)
+            if (!_vm.HasKnownPorts)
             {
-                row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-                _knownPortsPanel.Children.Add(row);
+                ClearPortSelection();
+                return;
             }
 
-            row!.Children.Add(CreatePortChip(port));
-            col = (col + 1) % chipsPerRow;
-        }
+            if (_selectedPort is int selected && _vm.KnownPorts.All(p => p.Port != selected))
+                ClearPortSelection();
 
-        if (_selectedPort is int current)
-            UpdatePortActionPanel(current);
+            foreach (var port in _vm.KnownPorts)
+            {
+                _knownPortsPanel.Children.Add(CreatePortChip(port));
+            }
+
+            if (_selectedPort is int current)
+                UpdatePortActionPanel(current);
+        }
+        finally
+        {
+            _isRefreshingKnownPorts = false;
+        }
     }
 
     private Border CreatePortChip(DevicePortDisplayItem port)
@@ -1112,6 +1130,7 @@ public sealed class DetailsPage : Page
         {
             Width = 82,
             MinHeight = 44,
+            Margin = new Thickness(0, 0, 6, 6),
             Padding = new Thickness(8, 6, 8, 6),
             CornerRadius = new CornerRadius(6),
             Background = isSelected ? Bg(0xFF, 0x24, 0x28, 0x36) : Bg(0xFF, 0x1A, 0x1B, 0x1F),
@@ -1152,12 +1171,23 @@ public sealed class DetailsPage : Page
     {
         _tagsPanel.Children.Clear();
         if (_vm.SelectedDevice is null) return;
+
+        const int tagsPerRow = 3;
+        StackPanel? row = null;
+        var col = 0;
         foreach (var tag in _vm.SelectedDevice.Tags)
         {
+            if (col == 0)
+            {
+                row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(0, 0, 0, 6) };
+                _tagsPanel.Children.Add(row);
+            }
+
             var t = tag;
             var chip = new Button { Content = $"{t} ×", Padding = new Thickness(8, 4, 8, 4) };
             chip.Click += async (_, _) => { await _vm.RemoveTagAsync(_vm.SelectedDevice!, t); RefreshTags(); };
-            _tagsPanel.Children.Add(chip);
+            row!.Children.Add(chip);
+            col = (col + 1) % tagsPerRow;
         }
     }
 

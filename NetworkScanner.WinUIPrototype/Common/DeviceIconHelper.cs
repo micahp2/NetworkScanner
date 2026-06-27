@@ -108,8 +108,7 @@ public static class DeviceIconHelper
         {
             return new FontIcon
             {
-                Glyph = glyphChar,
-                FontFamily = FluentIcons
+                Glyph = glyphChar
             };
         }
 
@@ -121,16 +120,14 @@ public static class DeviceIconHelper
             {
                 return new FontIcon
                 {
-                    Glyph = choice.Glyph,
-                    FontFamily = FluentIcons
+                    Glyph = choice.Glyph
                 };
             }
         }
 
         return new FontIcon
         {
-            Glyph = "\uE700",
-            FontFamily = FluentIcons
+            Glyph = "\uE700"
         };
     }
 

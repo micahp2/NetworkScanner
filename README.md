@@ -210,6 +210,28 @@ NetworkScanner/
 
 ## Changelog
 
+### v1.0.10
+
+- **Port Scanning Improvements & Concurrent Scanning (WinUI)**:
+  - Optimized single-device port scanning to scan ports concurrently using a Semaphore-based approach (max concurrency 50).
+  - Added incremental, live UI updates so open ports populate in the UI as soon as they are found.
+  - Implemented a functional "Cancel" button to stop ongoing port scans instantly.
+  - Automatically cancels active port scans when the selected device changes.
+- **Deep Info Page & Layout Bug Fixes (WinUI)**:
+  - Resolved UI thread deadlock/freeze when switching to the Deep Info page by removing mutating View-ViewModel reentrancy loops.
+  - Prevented "Detect OS" and other metadata updates from wiping active scan or Live Status states by checking identity reference equality on selection changes.
+  - Configured port chip layout to use wrapping `VariableSizedWrapGrid` to prevent overflow.
+  - Restructured the device tags view to wrap cleanly without cell clipping, ensuring the tag remove `×` button is always visible.
+  - Configured the Live Status switch label to show "On" / "Off".
+  - Implemented instant visual "Copied!" feedback (1.5 seconds) on the Copy Profile button.
+- **Search Bar Cleared on First Click**:
+  - Configured the clear search ("X") button to clear the input text and deactivate search immediately on the first click.
+- **100% Robust Icon Picker Catalog (GDI32 Font Parsing)**:
+  - Rewrote the icon scanning backend from scratch using native **GDI32 Win32 APIs** to verify outline support for each unicode character code point.
+  - Bypassed DirectWrite COM interface calls entirely to resolve memory/vtable alignment faults across different OS configurations.
+  - Automatically excludes empty rectangle placeholders (`.notdef` glyphs) on all Windows versions.
+  - Removed explicit font family overrides to allow WinUI 3 controls to fall back dynamically to the correct OS theme font (`Segoe Fluent Icons` on Windows 11, `Segoe MDL2 Assets` on Windows 10) via `SymbolThemeFontFamily`.
+
 ### v1.0.9
 
 - **Column Drag-to-Reorder & Persistence (WinUI)**:

@@ -20,5 +20,6 @@ public interface IScannerBackend
         string ports,
         int portTimeoutMs,
         CancellationToken token,
-        IProgress<int>? progress = null);
+        IProgress<int>? progress = null,
+        IProgress<int>? openPortProgress = null);
 }

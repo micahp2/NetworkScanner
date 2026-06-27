@@ -357,7 +357,6 @@ public sealed class NavDiagWindow : Window
                     "settings" => "\uE713",
                     _ => "\uE10F"
                 },
-                FontFamily = new FontFamily("Segoe Fluent Icons"),
                 FontSize = 16
             };
         }

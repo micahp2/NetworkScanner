@@ -1,4 +1,9 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.InteropServices;
+using System.Text;
+using System.Threading.Tasks;
 
 namespace NetworkScanner.WinUIPrototype.Common;
 
@@ -32,38 +37,92 @@ internal static class FluentIconCatalog
     private static IReadOnlyList<string> Build()
     {
         var codePoints = new SortedSet<int>();
+        IntPtr hdc = IntPtr.Zero;
+        IntPtr hFont = IntPtr.Zero;
+        IntPtr hOldFont = IntPtr.Zero;
 
         try
         {
-            Marshal.ThrowExceptionForHR(
-                DWriteCreateFactory(DWriteFactoryType.Shared, typeof(IDWriteFactory).GUID, out var factoryObj));
-
-            var factory = (IDWriteFactory)factoryObj;
-            factory.GetSystemFontCollection(out var collection, false);
-            collection.FindFamilyName("Segoe Fluent Icons", out var familyIndex, out var exists);
-            if (!exists)
+            hdc = CreateCompatibleDC(IntPtr.Zero);
+            if (hdc == IntPtr.Zero)
                 return FallbackGlyphs();
 
-            collection.GetFontFamily(familyIndex, out var family);
-            family.GetFirstMatchingFont(
-                DWriteFontWeight.Normal,
-                DWriteFontStretch.Normal,
-                DWriteFontStyle.Normal,
-                out var font);
+            // Try Segoe Fluent Icons first
+            hFont = CreateFontW(
+                -16, 0, 0, 0, 400, 0, 0, 0,
+                1, // DEFAULT_CHARSET
+                0, 0, 0, 0,
+                "Segoe Fluent Icons");
+
+            if (hFont != IntPtr.Zero)
+            {
+                hOldFont = SelectObject(hdc, hFont);
+                
+                // Verify if GDI actually selected Segoe Fluent Icons
+                var sb = new StringBuilder(128);
+                GetTextFaceW(hdc, sb.Capacity, sb);
+                var faceName = sb.ToString();
+
+                if (!faceName.Equals("Segoe Fluent Icons", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Clean up and fallback to Segoe MDL2 Assets
+                    SelectObject(hdc, hOldFont);
+                    DeleteObject(hFont);
+                    hFont = IntPtr.Zero;
+                    hOldFont = IntPtr.Zero;
+                }
+            }
+
+            // Fallback to Segoe MDL2 Assets if Segoe Fluent Icons is not found
+            if (hFont == IntPtr.Zero)
+            {
+                hFont = CreateFontW(
+                    -16, 0, 0, 0, 400, 0, 0, 0,
+                    1, // DEFAULT_CHARSET
+                    0, 0, 0, 0,
+                    "Segoe MDL2 Assets");
+
+                if (hFont != IntPtr.Zero)
+                {
+                    hOldFont = SelectObject(hdc, hFont);
+                }
+            }
+
+            if (hFont == IntPtr.Zero)
+                return FallbackGlyphs();
+
+            var glyphIndices = new ushort[1];
 
             foreach (var (start, end) in ScanRanges)
             {
                 for (var cp = start; cp <= end; cp++)
                 {
-                    font.HasCharacter((uint)cp, out var hasCharacter);
-                    if (hasCharacter)
+                    var chStr = char.ConvertFromUtf32(cp);
+                    glyphIndices[0] = 0;
+                    
+                    var res = GetGlyphIndicesW(hdc, chStr, chStr.Length, glyphIndices, GGI_MARK_NONEXISTING_GLYPHS);
+                    // In GDI, if character doesn't exist, it returns 0xFFFF (due to GGI_MARK_NONEXISTING_GLYPHS flag)
+                    if (res != 0xFFFFFFFF && glyphIndices[0] != 0xFFFF && glyphIndices[0] != 0)
+                    {
                         codePoints.Add(cp);
+                    }
                 }
             }
         }
         catch
         {
             return FallbackGlyphs();
+        }
+        finally
+        {
+            if (hdc != IntPtr.Zero)
+            {
+                if (hOldFont != IntPtr.Zero)
+                    SelectObject(hdc, hOldFont);
+                if (hFont != IntPtr.Zero)
+                    DeleteObject(hFont);
+                DeleteDC(hdc);
+            }
         }
 
         return codePoints.Count == 0
@@ -85,6 +144,7 @@ internal static class FluentIconCatalog
 
     private static readonly (int Start, int End)[] ScanRanges =
     {
+        (0xE100, 0xE2FF), // Core system icons
         (0xE700, 0xE7FF),
         (0xE800, 0xE8FF),
         (0xE900, 0xE9FF),
@@ -105,80 +165,45 @@ internal static class FluentIconCatalog
         (0xF800, 0xF8FF)
     };
 
-    private enum DWriteFactoryType
-    {
-        Shared = 0
-    }
+    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr CreateCompatibleDC(IntPtr hdc);
 
-    private enum DWriteFontWeight
-    {
-        Normal = 400
-    }
+    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
+    private static extern bool DeleteDC(IntPtr hdc);
 
-    private enum DWriteFontStretch
-    {
-        Normal = 5
-    }
+    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr CreateFontW(
+        int nHeight,
+        int nWidth,
+        int nEscapement,
+        int nOrientation,
+        int fnWeight,
+        uint fdwItalic,
+        uint fdwUnderline,
+        uint fdwStrikeOut,
+        uint fdwCharSet,
+        uint fdwOutputPrecision,
+        uint fdwClipPrecision,
+        uint fdwQuality,
+        uint fdwPitchAndFamily,
+        string lpszFace);
 
-    private enum DWriteFontStyle
-    {
-        Normal = 0
-    }
+    [DllImport("gdi32.dll")]
+    private static extern IntPtr SelectObject(IntPtr hdc, IntPtr hgdiobj);
 
-    [DllImport("DWrite.dll")]
-    private static extern int DWriteCreateFactory(
-        DWriteFactoryType factoryType,
-        [MarshalAs(UnmanagedType.LPStruct)] Guid iid,
-        [MarshalAs(UnmanagedType.IUnknown, IidParameterIndex = 1)] out object factory);
+    [DllImport("gdi32.dll")]
+    private static extern bool DeleteObject(IntPtr hObject);
 
-    [ComImport]
-    [Guid("727CAD4E-D6AE-4269-0810-7908EBBB980A")]
-    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IDWriteFactory
-    {
-        void GetSystemFontCollection(out IDWriteFontCollection fontCollection, [MarshalAs(UnmanagedType.Bool)] bool checkForUpdates);
-    }
+    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetTextFaceW(IntPtr hdc, int c, StringBuilder name);
 
-    [ComImport]
-    [Guid("A84CEE02-3EEA-4EEE-A827-87C16A0AA325")]
-    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IDWriteFontCollection
-    {
-        uint GetFontFamilyCount();
-        void GetFontFamily(uint index, out IDWriteFontFamily fontFamily);
-        void FindFamilyName([MarshalAs(UnmanagedType.LPWStr)] string familyName, out uint index, [MarshalAs(UnmanagedType.Bool)] out bool exists);
-    }
+    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
+    private static extern uint GetGlyphIndicesW(
+        IntPtr hdc,
+        string lpstr,
+        int c,
+        [Out] ushort[] pgi,
+        uint fl);
 
-    [ComImport]
-    [Guid("DA20D8BF-12A4-433C-8474-D7C17195EBFE")]
-    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IDWriteFontFamily
-    {
-        void GetFamilyNames(out IntPtr names);
-        void GetFontCount(out uint count);
-        void GetFont(uint index, out IDWriteFont font);
-        void GetFirstMatchingFont(DWriteFontWeight weight, DWriteFontStretch stretch, DWriteFontStyle style, out IDWriteFont font);
-    }
-
-    [ComImport]
-    [Guid("ACDE7186-8AE4-4218-9546-48A8650AB7A2")]
-    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IDWriteFont
-    {
-        void GetFontFamily(out IDWriteFontFamily fontFamily);
-        DWriteFontWeight GetWeight();
-        DWriteFontStretch GetStretch();
-        DWriteFontStyle GetStyle();
-        [PreserveSig]
-        int IsSymbolFont();
-        void GetFaceNames(out IntPtr faceNames);
-        void GetInformationalStrings(
-            uint informationalStringId,
-            out IntPtr informationalStrings,
-            [MarshalAs(UnmanagedType.Bool)] out bool exists);
-        int GetSimulations();
-        void GetMetrics(out IntPtr fontMetrics);
-        void HasCharacter(uint unicodeChar, [MarshalAs(UnmanagedType.Bool)] out bool exists);
-        void CreateFontFace(out IntPtr fontFace);
-    }
+    private const uint GGI_MARK_NONEXISTING_GLYPHS = 0x0001;
 }

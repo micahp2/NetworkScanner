@@ -328,7 +328,15 @@ public sealed partial class MainWindow : Window
         searchToggleBtn.Click += (_, _) =>
         {
             var hasText = !string.IsNullOrWhiteSpace(_vm.SearchText);
-            if (!hasText && !_vm.IsSearching)
+            if (hasText)
+            {
+                _vm.SearchText = string.Empty;
+                _vm.IsSearching = false;
+                _vm.ShowFindPanel = false;
+                return;
+            }
+
+            if (!_vm.IsSearching)
             {
                 _vm.IsSearching = true;
                 _searchBox?.Focus(FocusState.Programmatic);

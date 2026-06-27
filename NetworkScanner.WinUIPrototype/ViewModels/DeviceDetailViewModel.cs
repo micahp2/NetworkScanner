@@ -18,6 +18,7 @@ public sealed class DeviceDetailViewModel : ObservableObject, IDisposable
     private CancellationTokenSource? _portScanCts;
     private DispatcherQueueTimer? _persistTimer;
     private ScanResultRow? _selectedDeviceSubscription;
+    private ScanResultRow? _currentDevice;
 
     private bool _monitorEnabled = true;
     private bool _isPortScanning;
@@ -69,6 +70,7 @@ public sealed class DeviceDetailViewModel : ObservableObject, IDisposable
         PrevDeviceCommand = new RelayCommand(() => _scanner.SelectPreviousDevice());
         NextDeviceCommand = new RelayCommand(() => _scanner.SelectNextDevice());
         ScanPortsCommand = new RelayCommand(async () => await ScanPortsAsync());
+        CancelPortScanCommand = new RelayCommand(() => _portScanCts?.Cancel());
         DetectOsCommand = new RelayCommand(async () => await DetectOsAsync());
         RefreshMetadataCommand = new RelayCommand(async () => await RefreshMetadataAsync());
         CopyProfileCommand = new RelayCommand(() =>
@@ -198,8 +200,16 @@ public sealed class DeviceDetailViewModel : ObservableObject, IDisposable
     public bool IsPortScanning
     {
         get => _isPortScanning;
-        private set => SetProperty(ref _isPortScanning, value);
+        private set
+        {
+            if (SetProperty(ref _isPortScanning, value))
+            {
+                RaisePropertyChanged(nameof(CanStartPortScan));
+            }
+        }
     }
+
+    public bool CanStartPortScan => !_isPortScanning;
 
     public string PortScanStatus
     {
@@ -285,6 +295,7 @@ public sealed class DeviceDetailViewModel : ObservableObject, IDisposable
     public RelayCommand PrevDeviceCommand { get; }
     public RelayCommand NextDeviceCommand { get; }
     public RelayCommand ScanPortsCommand { get; }
+    public RelayCommand CancelPortScanCommand { get; }
     public RelayCommand DetectOsCommand { get; }
     public RelayCommand RefreshMetadataCommand { get; }
     public RelayCommand CopyProfileCommand { get; }
@@ -555,6 +566,11 @@ public sealed class DeviceDetailViewModel : ObservableObject, IDisposable
 
     private void OnSelectedDeviceChanged()
     {
+        if (ReferenceEquals(_currentDevice, SelectedDevice))
+            return;
+        _currentDevice = SelectedDevice;
+
+        _portScanCts?.Cancel();
         UnsubscribeSelectedDevice();
         _monitor.Stop();
         SelectPort(null);
@@ -686,12 +702,22 @@ public sealed class DeviceDetailViewModel : ObservableObject, IDisposable
         try
         {
             var progress = new Progress<int>(p => PortScanStatus = $"Checking port {p}...");
+            var openProgress = new Progress<int>(p =>
+            {
+                if (SelectedDevice is not null)
+                {
+                    SelectedDevice.MergeLivePorts(new[] { p });
+                    RefreshKnownPorts();
+                }
+            });
+
             var open = await _scanner.Backend.ScanPortsForHostAsync(
                 SelectedDevice.IPAddress,
                 DeepScanPorts,
                 _scanner.PortTimeoutMs,
                 _portScanCts.Token,
-                progress);
+                progress,
+                openProgress);
 
             var merged = DeviceActions.ParseOpenPorts(SelectedDevice.OpenPorts);
             merged.AddRange(open);
@@ -706,6 +732,12 @@ public sealed class DeviceDetailViewModel : ObservableObject, IDisposable
         catch (OperationCanceledException)
         {
             PortScanStatus = "Cancelled";
+            if (SelectedDevice is not null)
+            {
+                await _scanner.PersistDevicePublicAsync(SelectedDevice);
+                _scanner.RefreshScopeFilters();
+                DeviceMetadataChanged?.Invoke();
+            }
         }
         catch (Exception ex)
         {

@@ -505,16 +505,38 @@ public class NetworkScannerService
         IEnumerable<int> ports,
         int portTimeoutMs,
         CancellationToken token,
-        IProgress<int>? progress = null)
+        IProgress<int>? progress = null,
+        Action<int>? onPortFound = null)
     {
         var openPorts = new List<int>();
-        foreach (var port in ports.Distinct().OrderBy(p => p))
+        var distinctPorts = ports.Distinct().OrderBy(p => p).ToList();
+
+        using var sem = new SemaphoreSlim(50);
+        var tasks = distinctPorts.Select(async port =>
         {
-            if (token.IsCancellationRequested) break;
-            progress?.Report(port);
-            if (await ScanPortAsync(ip, port, portTimeoutMs, token))
-                openPorts.Add(port);
-        }
-        return openPorts;
+            if (token.IsCancellationRequested) return;
+            await sem.WaitAsync(token);
+            try
+            {
+                if (token.IsCancellationRequested) return;
+                progress?.Report(port);
+
+                if (await ScanPortAsync(ip, port, portTimeoutMs, token))
+                {
+                    lock (openPorts)
+                    {
+                        openPorts.Add(port);
+                    }
+                    onPortFound?.Invoke(port);
+                }
+            }
+            finally
+            {
+                sem.Release();
+            }
+        });
+
+        await Task.WhenAll(tasks);
+        return openPorts.OrderBy(p => p).ToList();
     }
 }

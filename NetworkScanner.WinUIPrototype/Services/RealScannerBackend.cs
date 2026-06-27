@@ -69,13 +69,14 @@ public sealed class RealScannerBackend : IScannerBackend
         string ports,
         int portTimeoutMs,
         CancellationToken token,
-        IProgress<int>? progress = null)
+        IProgress<int>? progress = null,
+        IProgress<int>? openPortProgress = null)
     {
         var parsed = NetworkScannerUtils.ParsePorts(ports);
         if (parsed.Count == 0)
             parsed = new List<int> { 22, 80, 443 };
 
-        return await NetworkScannerService.ScanPortsForHostAsync(ip, parsed, portTimeoutMs, token, progress);
+        return await NetworkScannerService.ScanPortsForHostAsync(ip, parsed, portTimeoutMs, token, progress, openPortProgress != null ? openPortProgress.Report : null);
     }
 
     private static ScanOptions BuildOptions(string ipRanges, string ports, bool scanIPv4, bool scanIPv6)

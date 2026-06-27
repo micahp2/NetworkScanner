@@ -53,12 +53,24 @@ public sealed class MockScannerBackend : IScannerBackend
         string ports,
         int portTimeoutMs,
         CancellationToken token,
-        IProgress<int>? progress = null)
+        IProgress<int>? progress = null,
+        IProgress<int>? openPortProgress = null)
     {
-        await Task.Delay(300, token);
+        await Task.Delay(100, token);
         var parsed = NetworkScanner.Core.NetworkScannerUtils.ParsePorts(ports);
         if (parsed.Count == 0) parsed = new List<int> { 22, 80, 443 };
-        foreach (var p in parsed) progress?.Report(p);
-        return parsed.Where(p => p is 22 or 80 or 443 or 8080).ToList();
+        
+        var open = parsed.Where(p => p is 22 or 80 or 443 or 8080).ToList();
+        foreach (var p in parsed)
+        {
+            if (token.IsCancellationRequested) break;
+            progress?.Report(p);
+            if (p is 22 or 80 or 443 or 8080)
+            {
+                openPortProgress?.Report(p);
+            }
+            await Task.Delay(20, token); // small delay to simulate scan progress
+        }
+        return open;
     }
 }
